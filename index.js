@@ -1,10 +1,24 @@
+const Queue = require('./src/queue');
 const uxp = require('uxp');
 const fs = require('uxp').storage.localFileSystem;
+const PhotoshopAction = require('photoshop').action;  
+const imaging = require("photoshop").imaging;
+const executeAsModal = require('photoshop').core.executeAsModal;
 
-const webviewInPanel = document.getElementById("webviewInPanel");
-  
+let updates = new Queue();
+let currentUpdateProgress = 0;
 
-const loadFile = async () => {
+function init()
+{
+    PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
+    // historyStateChanged fires whenever the image is changed
+    PhotoshopAction.addNotificationListener(['historyStateChanged'], handleImageChanged);
+
+    setInterval(processUpdates, 33); // 30 ticks per second.
+}
+
+
+async function loadFile() {
     const file = await fs.getFileForOpening({allowMultiple: false, types: ["obj"]});
     if (!file) {
       console.log("No file selected");
@@ -14,8 +28,7 @@ const loadFile = async () => {
     return await file.read();
 }
 
-
-const handleLoadModelBtn = async () => {
+async function handleLoadModelBtn() {
     var fileData = await loadFile();
     if (!fileData) {
         console.log("No file data");
@@ -28,17 +41,43 @@ const handleLoadModelBtn = async () => {
     panelWebview.postMessage({path: "load", fileData: fileData}, [fileData]);
 }
 
+async function getPixelData(executionContext, descriptor) {
+    console.log("entered");
+    const imageObj = await imaging.getPixels({componentSize: 8});
+    console.log("gotPixels");
+    const pixelData = await imageObj.imageData.getData({chunky: false});
+    console.log("gotData");
+    queueUpdates(pixelData);
+}
 
-const loadModelBtn = document.getElementById("loadModelBtn");
-loadModelBtn.onclick = handleLoadModelBtn;
-
-
-// ======= receive message from webview content =======
-window.addEventListener("message", (e) => {
-    console.log(`Message from WebView(Origin:${e.origin}): ${e.data}`);
-    if (e.data.key === "imageDetails") {
-        document.getElementById("snapshot").src = e.data.value;
-    } else if (e.data.key === "canvasDetails") {
-        document.getElementById("logWebview").innerText = e.data.value;
+async function handleImageChanged() {
+    try {
+        await executeAsModal(getPixelData, {"commandName": "Updating Texture Data"})
     }
-});
+    catch(e) {
+        if (e.number == 9) {
+            showAlert("executeAsModal was rejected (some other plugin is currently inside a modal scope)");
+        }
+        else {
+            showAlert(e);
+        }
+    }
+}
+
+function queueUpdates(pixelData) {
+    updates.enqueue(pixelData);
+}
+
+function processUpdates() {
+    var currentPixelData = updates.peek();
+    const panelWebview = document.getElementById("panelWebview");
+    panelWebview.postMessage(currentPixelData);
+    console.log("Queued");
+}
+
+init();
+
+
+
+
+

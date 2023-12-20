@@ -1,6 +1,7 @@
 import './style.css'
 import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const _canvas = document.querySelector('#htmlCanvas');
@@ -16,6 +17,7 @@ let renderer;
 let model;
 let light;
 let controls;
+let material;
 
 init();
 
@@ -30,20 +32,48 @@ function init() {
     loadBtn.onclick = onLoadButtonClicked;
     initializeCanvas();
     window.addEventListener("resize", initializeCanvas);
+    window.addEventListener("message", onMessageReceived);
+
 
     animate();
+}
+
+async function onMessageReceived(event) {
+    let data = event.data;
+    console.log("recvd")
+    console.log(data)
 }
 
 function initializeCanvas() {
     renderer.setSize(window.innerWidth, window.innerHeight - 80); 
 }
 
+function createDefaultMaterial(texture) {
+    return new THREE.MeshStandardMaterial({
+        color: 0x111111,
+        map: texture
+    });
+}
 
-function initializeScene(modelFilePath) {
-    const material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+// Something like this will be helpful: https://github.com/mrdoob/three.js/blob/master/examples/webgl_materials_texture_canvas.html
+
+function loadModel(modelFilePath) {
+    if (model) {
+        scene.remove(model);
+        material.dispose();
+    }
+
     loader.load(modelFilePath, function(obj) {
+        obj.traverse( child => {
+
+            if ( child.material ) {
+                material = createDefaultMaterial();
+                child.material = material;
+            }
+
+        } );
         model = obj;
-        scene.add(obj);
+        scene.add(model);
         URL.revokeObjectURL(modelFilePath);
     }, undefined, function(error) {
         console.error(error);
@@ -70,7 +100,7 @@ function animate() {
 async function onLoadButtonClicked(){
     let file = await selectFile(".obj", false);
     let url = URL.createObjectURL(file);
-    initializeScene(url);
+    loadModel(url);
 }
 
 /**
