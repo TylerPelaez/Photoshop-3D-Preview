@@ -1,5 +1,7 @@
 # Introduction
 
+To run, do `npm run dev` from webview dir
+
 This sample plugin demonstrates the usage of WebView in your UXP plugin. WebViews are particularly handy when certain web features, such as webGL, are not innately available in UXP.
 
 The aim of this plugin is 

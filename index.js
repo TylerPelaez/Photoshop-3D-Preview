@@ -7,6 +7,7 @@ const executeAsModal = require('photoshop').core.executeAsModal;
 
 let updates = new Queue();
 let currentUpdateProgress = 0;
+var globalCurrentPixelData;
 
 function init()
 {
@@ -17,37 +18,14 @@ function init()
     setInterval(processUpdates, 33); // 30 ticks per second.
 }
 
-
-async function loadFile() {
-    const file = await fs.getFileForOpening({allowMultiple: false, types: ["obj"]});
-    if (!file) {
-      console.log("No file selected");
-      return null;
-    }
-
-    return await file.read();
-}
-
-async function handleLoadModelBtn() {
-    var fileData = await loadFile();
-    if (!fileData) {
-        console.log("No file data");
-        return;
-    }
-
-    console.log("File data found");
-
-    const panelWebview = document.getElementById("panelWebview");
-    panelWebview.postMessage({path: "load", fileData: fileData}, [fileData]);
-}
-
-async function getPixelData(executionContext, descriptor) {
+function getPixelData(executionContext, descriptor) {
     console.log("entered");
-    const imageObj = await imaging.getPixels({componentSize: 8});
+    const imagePromise = imaging.getPixels({componentSize: 8});
     console.log("gotPixels");
-    const pixelData = await imageObj.imageData.getData({chunky: false});
+    const pixelPromise = imagePromise.then(imageObject => imageObject.imageData.getData({chunky: false}));
+
     console.log("gotData");
-    queueUpdates(pixelData);
+    queueUpdates(pixelPromise);
 }
 
 async function handleImageChanged() {
@@ -68,12 +46,47 @@ function queueUpdates(pixelData) {
     updates.enqueue(pixelData);
 }
 
-function processUpdates() {
-    var currentPixelData = updates.peek();
-    const panelWebview = document.getElementById("panelWebview");
-    panelWebview.postMessage(currentPixelData);
-    console.log("Queued");
+async function processUpdates() {
+  let currentPixelDataPromise = updates.peek();
+  if (currentPixelDataPromise) {
+      await Promise.resolve(currentPixelDataPromise).then(function(currentPixelData) {
+
+          console.log("posting")
+  
+          globalCurrentPixelData = updates.dequeue();
+
+          const panelWebview = document.getElementById("panelWebview");
+          panelWebview.postMessage("dataUpdated");
+      });
+  }
 }
+
+// async function processUpdates() {
+//     let currentPixelDataPromise = updates.peek();
+//     if (currentPixelDataPromise) {
+//         await Promise.resolve(currentPixelDataPromise).then(function(currentPixelData) {
+//             let byteOffset = currentUpdateProgress;
+
+//             let messageLength = currentPixelData.length / 100;
+//             console.log(messageLength);
+
+//             if (byteOffset + messageLength >= currentPixelData.length) {
+//                 messageLength = currentPixelData.length - byteOffset;
+//                 updates.dequeue();
+//                 console.log("Dequeued");
+//                 currentUpdateProgress = 0;
+//             } else {
+//                 currentUpdateProgress += messageLength;
+//             }
+
+//             console.log("posting")
+//             let message = new Uint8Array(currentPixelData, byteOffset, messageLength); 
+    
+//             const panelWebview = document.getElementById("panelWebview");
+//             panelWebview.postMessage(message);
+//         });
+//     }
+// }
 
 init();
 

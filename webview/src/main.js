@@ -38,10 +38,12 @@ function init() {
     animate();
 }
 
-async function onMessageReceived(event) {
+function onMessageReceived(event) {
     let data = event.data;
     console.log("recvd")
-    console.log(data)
+    console.log(parent)
+    var pixelData = window.parent.globalCurrentPixelData;
+    console.log(pixelData.length);
 }
 
 function initializeCanvas() {
