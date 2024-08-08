@@ -24,22 +24,22 @@
     {
       "type": "panel",
       "id": "mainPanel",
-      "label": "WebView Sample",
+      "label": "3D Texture Preview",
       "minimumSize": {
-        "width": 600,
-        "height": 850
+        "width": 300,
+        "height": 150
       },
       "maximumSize": {
-        "width": 2000,
-        "height": 2000
+        "width": 1000,
+        "height": 1000
       },
       "preferredDockedSize": {
-        "width": 600,
-        "height": 700
+        "width": 400,
+        "height": 200
       },
       "preferredFloatingSize": {
-        "width": 600,
-        "height": 700
+        "width": 480,
+        "height": 320
       },
       "icons": [
         {

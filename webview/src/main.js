@@ -15,88 +15,137 @@ let scene;
 let camera;
 let renderer;
 let model;
-let light;
 let controls;
 let material;
+
+let pixelData;
+let texture;
 
 init();
 
 function init() {
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
-    renderer = new THREE.WebGLRenderer({canvas: _canvas});
-    light = new THREE.DirectionalLight(0xffffff, 0.5);
-    controls = new OrbitControls( camera, renderer.domElement );
-    scene.add(light);
+    renderer = new THREE.WebGLRenderer({canvas: _canvas, antialias: true});
+    renderer.setAnimationLoop( render );
     
-    loadBtn.onclick = onLoadButtonClicked;
     initializeCanvas();
-    window.addEventListener("resize", initializeCanvas);
+    scene = new THREE.Scene();
+
+
+    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+    camera.position.set( 2, 3, 5 );
+    scene.add(camera);
+
+    controls = new OrbitControls( camera, renderer.domElement );
+    controls.addEventListener( 'change', render );
+
+    new THREE.CubeTextureLoader()
+      .setPath('textures/cube/')
+      .load( [
+				'px.bmp',
+				'nx.bmp',
+				'py.bmp',
+				'ny.bmp',
+				'pz.bmp',
+				'nz.bmp'
+			], function(textureCube) {
+        console.log(textureCube);
+        scene.background = textureCube;
+      }, function(error) {
+        console.log(error);
+      });
+
+
+    loadBtn.onclick = onLoadButtonClicked;
+    onWindowResize();
     window.addEventListener("message", onMessageReceived);
+    window.addEventListener("resize", onWindowResize);
 
+    pixelData = new Uint8Array(3);
+    pixelData[0] = 255;
+    pixelData[1] = 255;
+    pixelData[2] = 255;
 
-    animate();
+    texture = new THREE.DataTexture(pixelData, 1, 1);
+    material = new THREE.MeshBasicMaterial({map: texture});
+
+    window.uxpHost.postMessage("Ready");
 }
 
 function onMessageReceived(event) {
     let data = event.data;
-    console.log("recvd")
-    console.log(parent)
-    var pixelData = window.parent.globalCurrentPixelData;
-    console.log(pixelData.length);
+    console.log("Message Start: " + window.performance.now());
+    if (data.type == "FULL_UPDATE") {
+      let width = data.width;
+      let height = data.height;  
+      console.log()
+      
+      pixelData = new Uint8Array(4 * width * height);
+      for (let i = 0; i < data.pixels.length; i++) {
+        pixelData[i] = data.pixels[i].charCodeAt();
+      }
+
+      // pixelData = Uint8Array.from(Array.from(data.pixels).map(ch => ch.charCodeAt()));
+
+      if (texture) {
+        texture.dispose();
+      }
+      texture = new THREE.DataTexture(pixelData, width, height);
+      texture.flipY = true;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = texture.minFilter = THREE.LinearFilter;
+
+      texture.needsUpdate = true;
+      
+      material.map = texture;
+    }
+    console.log("Message End: " + window.performance.now());
 }
 
 function initializeCanvas() {
     renderer.setSize(window.innerWidth, window.innerHeight - 80); 
 }
 
-function createDefaultMaterial(texture) {
-    return new THREE.MeshStandardMaterial({
-        color: 0x111111,
-        map: texture
-    });
+function onWindowResize() {
+
+  camera.aspect = window.innerWidth / window.innerHeight;
+
+  camera.updateProjectionMatrix();
+
+  renderer.setSize( window.innerWidth, window.innerHeight );
 }
+
 
 // Something like this will be helpful: https://github.com/mrdoob/three.js/blob/master/examples/webgl_materials_texture_canvas.html
 
 function loadModel(modelFilePath) {
     if (model) {
         scene.remove(model);
-        material.dispose();
+        model.dispose();
     }
+
 
     loader.load(modelFilePath, function(obj) {
         obj.traverse( child => {
-
-            if ( child.material ) {
-                material = createDefaultMaterial();
-                child.material = material;
-            }
-
+            console.log(child);
+            child.material = material;
         } );
         model = obj;
         scene.add(model);
+        window.uxpHost.postMessage("RequestUpdate");
+
+
         URL.revokeObjectURL(modelFilePath);
     }, undefined, function(error) {
         console.error(error);
         URL.revokeObjectURL(modelFilePath);
     });
-
-    camera.position.z = 10;
-    controls.update();
 }
 
-function animate() {
-    if (renderer) {
-        requestAnimationFrame( animate );
-        controls.update();
-        light.position.x = camera.position.x;
-        light.position.y = camera.position.y;
-        light.position.z = camera.position.z;
-        renderer.render( scene, camera );
-    }
+function render() {
+  renderer.render( scene, camera );
 }
-
 
 // Button callback
 async function onLoadButtonClicked(){

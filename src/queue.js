@@ -18,6 +18,9 @@ class Queue {
   peek() {
       return this.items[this.frontIndex]
   }
+  empty() {
+    return this.backIndex === this.frontIndex;
+  }
   get printQueue() {
       return this.items;
   }

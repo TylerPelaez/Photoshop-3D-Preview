@@ -5,22 +5,19 @@
   <script src="index.js"></script>
 </head>
 <style>
-    html, body {
+    html, body, div, webview {
         margin:0;
         padding:0;
+        width: 100%;
+        height: 100%;
     }
 </style>
 
 <body>
   <div class="wrapper">
     <sp-divider></sp-divider>
-    <!-- <div class="infoRow">
-      <sp-icon name="ui:InfoSmall" size="s" class="icon" style="color: grey;"></sp-icon>
-      <sp-detail size="s" id="note" style="margin-left: 5px;">Make sure the local server is running (Refer README for more details).</sp-detail>
-    </div> -->
-
-    <div id="webviewInPanel" style="display: block;">
-      <webview id="panelWebview" width="100%" height="480px" src="http://127.0.0.1:5173/" />
+    <div id="webviewInPanel">
+      <webview id="panelWebview" src="http://127.0.0.1:5173/" />
     </div>
 </body>
 

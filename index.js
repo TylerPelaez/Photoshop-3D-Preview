@@ -1,36 +1,56 @@
 const Queue = require('./src/queue');
 const uxp = require('uxp');
 const fs = require('uxp').storage.localFileSystem;
+const app = require('photoshop').app;
 const PhotoshopAction = require('photoshop').action;  
 const imaging = require("photoshop").imaging;
 const executeAsModal = require('photoshop').core.executeAsModal;
 
 let updates = new Queue();
-let currentUpdateProgress = 0;
-var globalCurrentPixelData;
+let fullPixelData;
+let webviewReady = false;
+let components = 3;
 
 function init()
-{
+{  
+    //PhotoshopAction.addNotificationListener(['all'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
     PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
     // historyStateChanged fires whenever the image is changed
     PhotoshopAction.addNotificationListener(['historyStateChanged'], handleImageChanged);
 
-    setInterval(processUpdates, 33); // 30 ticks per second.
+
+
+    window.addEventListener("message", (e) => {
+      if (e.data === "Ready") {
+        webviewReady = true;        
+      }
+      else if (e.data == "RequestUpdate") {
+        handleImageChanged();
+      }
+    });
+    
+    // Get Current Document Pixel Data
+    handleImageChanged();
+    setInterval(processUpdates, 6);
 }
 
 function getPixelData(executionContext, descriptor) {
-    console.log("entered");
     const imagePromise = imaging.getPixels({componentSize: 8});
-    console.log("gotPixels");
-    const pixelPromise = imagePromise.then(imageObject => imageObject.imageData.getData({chunky: false}));
+    const pixelPromise = imagePromise.then(function(imageObject) {
+      components = imageObject.imageData.components;
+      console.log("Get Pixels: " + window.performance.now());
 
-    console.log("gotData");
-    queueUpdates(pixelPromise);
+      return imageObject.imageData.getData({chunky: true});
+    });
+    
+    updates.enqueue(pixelPromise);
 }
 
-async function handleImageChanged() {
+async function handleImageChanged() 
+{
+    console.log("Image Changed: " + window.performance.now());
     try {
-        await executeAsModal(getPixelData, {"commandName": "Updating Texture Data"})
+        await executeAsModal(getPixelData, {"commandName": "Updating Texture Data"});
     }
     catch(e) {
         if (e.number == 9) {
@@ -42,55 +62,63 @@ async function handleImageChanged() {
     }
 }
 
-function queueUpdates(pixelData) {
-    updates.enqueue(pixelData);
-}
-
 async function processUpdates() {
+  if (!webviewReady) return;
+
   let currentPixelDataPromise = updates.peek();
   if (currentPixelDataPromise) {
+      updates.dequeue();
+      console.log("Process: " + window.performance.now());
       await Promise.resolve(currentPixelDataPromise).then(function(currentPixelData) {
-
-          console.log("posting")
-  
-          globalCurrentPixelData = updates.dequeue();
-
-          const panelWebview = document.getElementById("panelWebview");
-          panelWebview.postMessage("dataUpdated");
+          fullPixelData = currentPixelData;
+          sendFullPixelData();
       });
+      console.log("PostProcess: " + window.performance.now());
   }
 }
 
-// async function processUpdates() {
-//     let currentPixelDataPromise = updates.peek();
-//     if (currentPixelDataPromise) {
-//         await Promise.resolve(currentPixelDataPromise).then(function(currentPixelData) {
-//             let byteOffset = currentUpdateProgress;
+function sendFullPixelData() {
+  const panelWebview = document.getElementById("panelWebview");
+//  console.log(fullPixelData);
+  console.log("Send Start: " + window.performance.now());
 
-//             let messageLength = currentPixelData.length / 100;
-//             console.log(messageLength);
+  const width = app.activeDocument.width;
+  const height = app.activeDocument.height;
 
-//             if (byteOffset + messageLength >= currentPixelData.length) {
-//                 messageLength = currentPixelData.length - byteOffset;
-//                 updates.dequeue();
-//                 console.log("Dequeued");
-//                 currentUpdateProgress = 0;
-//             } else {
-//                 currentUpdateProgress += messageLength;
-//             }
+  var modifiedPixelData;
 
-//             console.log("posting")
-//             let message = new Uint8Array(currentPixelData, byteOffset, messageLength); 
-    
-//             const panelWebview = document.getElementById("panelWebview");
-//             panelWebview.postMessage(message);
-//         });
-//     }
-// }
+  if (components == 4) {
+    modifiedPixelData = new Array(4 * width * height);
+    for (var i = 0; i < fullPixelData.length; i++) {
+      modifiedPixelData[i] = String.fromCharCode(fullPixelData[i]);
+    }
+  }
+  else {
+    modifiedPixelData = new Array(4 * width * height);
+
+    let current_pixel_index = 0;
+    for (var i = 0; i < fullPixelData.length; i++) {
+      let rgba_index = current_pixel_index + (i % 3);
+
+      modifiedPixelData[rgba_index] = String.fromCharCode(fullPixelData[i]);
+
+      // Set alpha channel to 255
+      if (i % 3 == 2 && i != 0) {
+        modifiedPixelData[rgba_index + 1] = "ÿ"; // The 255 charcode
+        current_pixel_index += 4;
+      }
+    }
+  }
+
+  console.log("Pre Post: " + window.performance.now());
+
+  var pixelString = modifiedPixelData.join("");
+  console.log("Buffer: " + window.performance.now());
+
+  panelWebview.postMessage( {type: "FULL_UPDATE", pixels: pixelString, width: width, height: height, components: components});
+  console.log("Post Done: " + window.performance.now());
+
+}
 
 init();
-
-
-
-
 
