@@ -216,8 +216,8 @@ function createGrid() {
 
   var gs = userSettings.gridSettings;
 
-  if (gs.visible && gs.size != null) {
-    grid = new THREE.GridHelper( gs.size, gs.divisions == null ? 1 : gs.divisions, 0x0000ff, 0x808080 );
+  if (gs.visible) {
+    grid = new THREE.GridHelper( gs.size, gs.divisions, 0x0000ff, 0x808080 );
     scene.add(grid);
   }
 }
