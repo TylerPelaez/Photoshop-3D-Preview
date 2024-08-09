@@ -1,17 +1,18 @@
-import './style.css'
-import * as THREE from 'three';
-
-import { UserSettings, GridSettings } from './components/App';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
+
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import React from 'react';
+import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo';
+
+import './style.css'
+import { UserSettings, GridSettings } from './components/Types';
 import App from './components/App';
-import { user } from '@nextui-org/react';
 
-
+// The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
 declare global {
   interface Window {
       uxpHost:any;
@@ -29,7 +30,7 @@ const loaders = {
 };
 
 
-let defaultUserSettings: UserSettings  = {
+const defaultUserSettings: UserSettings  = {
   gridSettings: {
     size: 100,
     divisions: 40,
@@ -39,9 +40,11 @@ let defaultUserSettings: UserSettings  = {
 
 let scene : THREE.Scene;
 
-
 let camera : THREE.PerspectiveCamera;
 let renderer : THREE.WebGLRenderer;
+
+let viewportGizmo : ViewportGizmo;
+
 let currentObject : THREE.Object3D;
 let controls : OrbitControls;
 let material : THREE.MeshBasicMaterial;
@@ -72,15 +75,16 @@ function init() {
     camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
     camera.position.set( 2, 3, 5 );
     scene.add(camera);
-
-    onWindowResize();
-
+    
     createGrid();
 
-
-
+    viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
     controls = new OrbitControls( camera, renderer.domElement );
-    controls.addEventListener( 'change', render );
+    controls.addEventListener( 'change', () => {
+      viewportGizmo.update();
+    });
+
+    viewportGizmo.target = controls.target;
 
     new THREE.CubeTextureLoader()
       .setPath('textures/cube/')
@@ -103,10 +107,8 @@ function init() {
     window.addEventListener("message", onMessageReceived);
     window.addEventListener("resize", onWindowResize);
 
-    pixelData = new Uint8Array(3);
-    pixelData[0] = 255;
-    pixelData[1] = 255;
-    pixelData[2] = 255;
+    // Declaring 
+    pixelData = new Uint8Array([255, 255, 255, 255]);
 
     texture = new THREE.DataTexture(pixelData, 1, 1);
     material = new THREE.MeshBasicMaterial({map: texture});
@@ -120,14 +122,11 @@ function onMessageReceived(event: MessageEvent) {
     if (data.type == "FULL_UPDATE") {
       let width = data.width;
       let height = data.height;  
-      console.log()
-      
+
       pixelData = new Uint8Array(4 * width * height);
       for (let i = 0; i < data.pixels.length; i++) {
         pixelData[i] = data.pixels[i].charCodeAt();
       }
-
-      // pixelData = Uint8Array.from(Array.from(data.pixels).map(ch => ch.charCodeAt()));
 
       if (texture) {
         texture.dispose();
@@ -151,6 +150,7 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize( window.innerWidth, window.innerHeight );
+  viewportGizmo.update();
 }
 
 
@@ -193,6 +193,7 @@ function loadObject(objectFileURL: string, objectFileName: string) {
 
 function render() {
   renderer.render( scene, camera );
+  viewportGizmo.render();
 }
 
 // Button callback
