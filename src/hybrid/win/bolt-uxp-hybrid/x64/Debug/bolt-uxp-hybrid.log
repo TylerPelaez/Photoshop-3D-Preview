@@ -1,0 +1,12 @@
+﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(517,5): warning MSB8004: Output Directory does not end with a trailing slash.  This build instance will add the slash as it is required to allow proper evaluation of the Output Directory.
+  UxpAddon.cpp
+  UxpTask.cpp
+  UxpValue.cpp
+  module.cpp
+  Generating Code...
+C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(1392,5): warning MSB8012: TargetPath(C:\Users\nrdft\Projects\PhotoshopPlugins\3dtexture.preview\src\hybrid\win\build\.uxpaddon) does not match the Linker's OutputFile property value (C:\Users\nrdft\Projects\PhotoshopPlugins\3dtexture.preview\src\hybrid\win\build\bolt-uxp-hybrid.uxpaddon). This may cause your project to build incorrectly. To correct this, please make sure that $(OutDir), $(TargetName) and $(TargetExt) property values match the value specified in %(Link.OutputFile).
+     Creating library build\bolt-uxp-hybrid.lib and object build\bolt-uxp-hybrid.exp
+  bolt-uxp-hybrid.vcxproj -> C:\Users\nrdft\Projects\PhotoshopPlugins\3dtexture.preview\src\hybrid\win\build\.uxpaddon
+  Copy Binary to Target
+  C:\Users\nrdft\Projects\PhotoshopPlugins\3dtexture.preview\src\hybrid\win\build\bolt-uxp-hybrid.uxpaddon
+  1 File(s) copied

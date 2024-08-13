@@ -1,3 +1,6 @@
 .vs/
-win/
-3dtexturepreview/
+node_modules/
+dist/
+build/
+public-hybrid/
+public-zip/
