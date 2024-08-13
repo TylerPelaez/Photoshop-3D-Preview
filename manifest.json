@@ -10,7 +10,11 @@
       "minVersion": "24.7.0"
     }
   ],
+  "addon": {
+    "name": "3dtexturepreview.uxpaddon" 
+  },  
   "requiredPermissions": {
+    "enableAddon" : true,
     "webview": {
       "allow": "yes",
       "domains": [

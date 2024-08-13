@@ -82,14 +82,14 @@ async function processUpdates() {
   if (currentPixelDataPromise) {
       updates.dequeue();
       console.log("Process: " + window.performance.now());
-      await Promise.resolve(currentPixelDataPromise.pixelPromise).then(function(currentPixelData) {
-          sendFullPixelData(currentPixelDataPromise.documentID, currentPixelData);
-      });
+      await Promise.resolve(currentPixelDataPromise.pixelPromise.then(function(currentPixelData) {
+          return sendFullPixelData(currentPixelDataPromise.documentID, currentPixelData);
+      }));
       console.log("PostProcess: " + window.performance.now());
   }
 }
 
-function sendFullPixelData(documentID, fullPixelData) {
+async function sendFullPixelData(documentID, fullPixelData) {
   const panelWebview = document.getElementById("panelWebview");
   console.log("Send start: " + window.performance.now());
 
@@ -106,38 +106,25 @@ function sendFullPixelData(documentID, fullPixelData) {
   const width = chosenDocument.width;
   const height = chosenDocument.height;
 
-  var modifiedPixelData;
-
-  if (components == 4) {
-    modifiedPixelData = new Array(4 * width * height);
-    for (var i = 0; i < fullPixelData.length; i++) {
-      modifiedPixelData[i] = String.fromCharCode(fullPixelData[i]);
-    }
-  }
-  else {
-    modifiedPixelData = new Array(4 * width * height);
-
-    let current_pixel_index = 0;
-    for (var i = 0; i < fullPixelData.length; i++) {
-      let rgba_index = current_pixel_index + (i % 3);
-
-      modifiedPixelData[rgba_index] = String.fromCharCode(fullPixelData[i]);
-
-      // Set alpha channel to 255
-      if (i % 3 == 2 && i != 0) {
-        modifiedPixelData[rgba_index + 1] = "ÿ"; // The 255 charcode
-        current_pixel_index += 4;
-      }
-    }
-  }
-
-  console.log("Conversion Done: " + window.performance.now());
-
-  var pixelString = modifiedPixelData.join("");
-
-  panelWebview.postMessage( {type: "FULL_UPDATE", pixels: pixelString, width: width, height: height, components: components, documentID: documentID});
-  console.log("Post Done: " + window.performance.now());
+  return await convertPixelDataToString(width, height, components, fullPixelData).then(modifiedPixelData => {
+    console.log("Conversion Done: " + window.performance.now());
+    panelWebview.postMessage( {type: "FULL_UPDATE", pixels: modifiedPixelData, width: width, height: height, components: components, documentID: documentID});
+    console.log("Post Done: " + window.performance.now());
+  });
 }
+
+
+async function convertPixelDataToString(width, height, components, pixelData) {
+    try {
+        const addon = await require("3dtexturepreview.uxpaddon");
+        const result = addon.convert_to_string(width, height, components, pixelData.buffer);
+        console.log(`result length= ${result.length}`);
+        return result;
+    } catch (err) {
+        console.log("Command failed", err);
+    }
+}
+
 
 function onSelect(event, descriptor) {
   console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor));
