@@ -1,16 +1,20 @@
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, Root } from 'react-dom/client';
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo';
+import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo.ts';
+import {Tween} from '@tweenjs/tween.js'
+
 
 import './style.css'
 import { UserSettings, GridSettings } from './components/Types';
 import App from './components/App';
+import { choiceStrings } from './components/ContextMenu.tsx';
+
 
 // The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
 declare global {
@@ -32,11 +36,13 @@ const loaders = {
 
 const defaultUserSettings: UserSettings  = {
   gridSettings: {
-    size: 100,
-    divisions: 40,
+    size: 10,
+    divisions: 10,
     visible: true
   }
 }
+
+const raycaster = new THREE.Raycaster();
 
 let scene : THREE.Scene;
 
@@ -47,102 +53,135 @@ let viewportGizmo : ViewportGizmo;
 
 let currentObject : THREE.Object3D;
 let controls : OrbitControls;
-let material : THREE.MeshBasicMaterial;
-
-let pixelData : Uint8Array;
-let texture : THREE.DataTexture;
-
-let userSettings = defaultUserSettings;
 let grid: THREE.GridHelper;
 
+
+let documentIDsToTextures = new Map<number, THREE.DataTexture>();
+let textureUUIDsToMaterials = new Map<string, THREE.MeshBasicMaterial>();
+let activeDocument: number;
+
+let userSettings = defaultUserSettings;
+
+let tween : Tween;
+
+let root : Root;
+
+let currentlySelectedObject : THREE.Object3D | null;
+let contextMenuOpen : boolean = false;
+
+let rightClickCancelled: boolean = false;
 
 init();
 
 function init() {
-    // Init React
-    const reactRoot = document.getElementById('reactRoot') as Element;
-    const root = createRoot(reactRoot);
+  // Init React
+  const reactRoot = document.getElementById('reactRoot');
+  root = createRoot(reactRoot as HTMLElement);
 
-   
-    root.render(React.createElement(App, {initialUserSettings: userSettings, onUpdateGridSettings: onUpdateGridSettings, onModelLoad: onLoadButtonClicked}));
+  renderUI(false, new THREE.Vector2(0, 0))
 
-    // Init Three.js
-    scene = new THREE.Scene();
+  // Init Three.js
+  scene = new THREE.Scene();
 
-    renderer = new THREE.WebGLRenderer({canvas: _canvas, antialias: true});
-    renderer.setAnimationLoop( render );
+  renderer = new THREE.WebGLRenderer({canvas: _canvas, antialias: true});
+  renderer.setAnimationLoop( render );
 
-    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
-    camera.position.set( 2, 3, 5 );
-    scene.add(camera);
-    
-    createGrid();
+  camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+  camera.position.set( 2, 3, 5 );
+  scene.add(camera);
 
-    viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
-    controls = new OrbitControls( camera, renderer.domElement );
-    controls.addEventListener( 'change', () => {
-      viewportGizmo.update();
+  createGrid();
+
+  viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
+  controls = new OrbitControls( camera, renderer.domElement );
+  controls.addEventListener( 'change', () => {
+    rightClickCancelled = true;
+    if (contextMenuOpen) renderUI(false);
+    viewportGizmo.update();
+    returnFocus();
+  });
+
+  viewportGizmo.target = controls.target;
+
+  // Load Background
+  new THREE.CubeTextureLoader()
+    .setPath('textures/cube/')
+    .load( [
+      'px.bmp',
+      'nx.bmp',
+      'py.bmp',
+      'ny.bmp',
+      'pz.bmp',
+      'nz.bmp'
+    ], function(textureCube) {
+      console.log(textureCube);
+      scene.background = textureCube;
+    }, function(error) {
+      console.log(error);
     });
 
-    viewportGizmo.target = controls.target;
+  
+  onWindowResize();
+  window.addEventListener("message", onMessageReceived);
+  window.addEventListener("resize", onWindowResize);
 
-    new THREE.CubeTextureLoader()
-      .setPath('textures/cube/')
-      .load( [
-				'px.bmp',
-				'nx.bmp',
-				'py.bmp',
-				'ny.bmp',
-				'pz.bmp',
-				'nz.bmp'
-			], function(textureCube) {
-        console.log(textureCube);
-        scene.background = textureCube;
-      }, function(error) {
-        console.log(error);
-      });
+  addEventListener("pointerup", onPointerUp);
 
-    
-    onWindowResize();
-    window.addEventListener("message", onMessageReceived);
-    window.addEventListener("resize", onWindowResize);
-
-    // Declaring 
-    pixelData = new Uint8Array([255, 255, 255, 255]);
-
-    texture = new THREE.DataTexture(pixelData, 1, 1);
-    material = new THREE.MeshBasicMaterial({map: texture});
-
-    window.uxpHost.postMessage("Ready");
+  window.uxpHost.postMessage("Ready");
 }
 
 function onMessageReceived(event: MessageEvent) {
-    let data = event.data;
-    console.log("Message Start: " + window.performance.now());
-    if (data.type == "FULL_UPDATE") {
-      let width = data.width;
-      let height = data.height;  
+  console.log("Received: " + window.performance.now());
+  let data = event.data;
+  console.log("Deserialized?: " + data.type + " " + window.performance.now()); 
+  if (data.type == "FULL_UPDATE") {
+    let width = data.width;
+    let height = data.height;  
+    let documentID = data.documentID;
+    console.log(documentID);
 
-      pixelData = new Uint8Array(4 * width * height);
-      for (let i = 0; i < data.pixels.length; i++) {
-        pixelData[i] = data.pixels[i].charCodeAt();
-      }
-
-      if (texture) {
-        texture.dispose();
-      }
-      texture = new THREE.DataTexture(pixelData, width, height);
-      texture.flipY = true;
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.magFilter = texture.minFilter = THREE.LinearFilter;
-
-      texture.needsUpdate = true;
-      
-      material.map = texture;
+    let pixelData = new Uint8Array(4 * width * height);
+    for (let i = 0; i < data.pixels.length; i++) {
+      pixelData[i] = data.pixels[i].charCodeAt();
     }
-    console.log("Message End: " + window.performance.now());
+
+    console.log("Decode Done: " + window.performance.now());
+
+    let materialToUpdate: THREE.MeshBasicMaterial | null = null;
+
+    if (documentIDsToTextures.has(documentID)) {
+      let texture = documentIDsToTextures.get(documentID)!;
+      let uuid = texture.uuid;
+      texture?.dispose();
+      documentIDsToTextures.delete(documentID);
+      materialToUpdate = textureUUIDsToMaterials.get(uuid)!;
+      textureUUIDsToMaterials.delete(uuid);
+    }
+
+    let texture = new THREE.DataTexture(pixelData, width, height);
+    texture.flipY = true;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = texture.minFilter = THREE.LinearFilter;
+
+    texture.needsUpdate = true;
+    
+    documentIDsToTextures.set(documentID, texture);
+
+    if (materialToUpdate) {
+      materialToUpdate.map = texture;
+      textureUUIDsToMaterials.set(texture.uuid, materialToUpdate);
+    } else {
+      let material = new THREE.MeshBasicMaterial({map: texture}); 
+      textureUUIDsToMaterials.set(texture.uuid, material);
+    }
+
+
+  } else if (data.type == "DOCUMENT_CHANGED") {
+    activeDocument = data.documentID;
+  }
+  console.log("Message End: " + window.performance.now());
 }
 
 
@@ -153,6 +192,50 @@ function onWindowResize() {
   viewportGizmo.update();
 }
 
+function onPointerUp(event: PointerEvent) {
+  if (rightClickCancelled) {
+    rightClickCancelled = false;
+    return;
+  }
+
+  rightClickCancelled = false;
+
+  if (contextMenuOpen) {
+    renderUI(false);
+  }
+
+  if (event.button == 2) {
+    let pointer = new THREE.Vector2();
+    pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+    pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects( scene.children );
+
+    
+    if (intersects.length == 0) return;
+
+    
+    let minDistance = Number.MAX_SAFE_INTEGER;
+    let minIndex = -1;
+
+
+    for ( let i = 0; i < intersects.length; i ++ ) {
+      if (intersects[i].object instanceof THREE.GridHelper) continue;
+      if (intersects[i].distance < minDistance) {
+        minDistance = intersects[i].distance;
+        minIndex = i;
+      }      
+    }
+
+
+    if (minIndex < 0) return;
+
+
+    currentlySelectedObject = intersects[minIndex].object;
+    renderUI(true, new THREE.Vector2(event.clientX, event.clientY));
+  }
+}
+
 
 // Something like this will be helpful: https://github.com/mrdoob/three.js/blob/master/examples/webgl_materials_texture_canvas.html
 
@@ -160,6 +243,8 @@ function loadObject(objectFileURL: string, objectFileName: string) {
     if (currentObject) {
         scene.remove(currentObject);
     }
+
+    window.uxpHost.postMessage("RequestUpdate");
 
     // Pick loader for file type
     var splitPath = objectFileName.split(".");
@@ -177,13 +262,12 @@ function loadObject(objectFileURL: string, objectFileName: string) {
       // Assign everything to the current material
       currentObject.traverse(child => {
         if (child instanceof THREE.Mesh) {
-          child.material = material;
+          child.material = new THREE.MeshBasicMaterial();
         }
       });
 
       scene.add(currentObject);
 
-      window.uxpHost.postMessage("RequestUpdate");
       URL.revokeObjectURL(objectFileURL);
     }, undefined, function(error) {
         console.error(error);
@@ -191,7 +275,8 @@ function loadObject(objectFileURL: string, objectFileName: string) {
     });
 }
 
-function render() {
+function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
+  if (tween && tween.isPlaying()) tween.update(time);
   renderer.render( scene, camera );
   viewportGizmo.render();
 }
@@ -201,12 +286,14 @@ async function onLoadButtonClicked(){
     let file = await selectFile(".obj,.fbx,.gltf,.glb");
     let url = URL.createObjectURL(file);
     loadObject(url, file.name);
+    returnFocus();
 }
 
 function onUpdateGridSettings(newSettings: GridSettings) {
   userSettings = {...userSettings, gridSettings: newSettings}
 
   createGrid();
+  returnFocus();
 }
 
 function createGrid() {
@@ -221,6 +308,47 @@ function createGrid() {
     grid = new THREE.GridHelper( gs.size, gs.divisions, 0x0000ff, 0x808080 );
     scene.add(grid);
   }
+}
+
+function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector2 = new THREE.Vector2(0, 0)) {
+  root.render(React.createElement(App, {
+    initialUserSettings: userSettings, 
+    onUpdateGridSettings: onUpdateGridSettings, 
+    onModelLoad: onLoadButtonClicked,
+    contextMenuOpen: contextMenuVisible,
+    contextMenuPosition: contextMenuPosition,
+    onContextMenuChoiceMade: onContextMenuChoiceMade
+  }));
+
+  contextMenuOpen = contextMenuVisible;
+}
+
+function onContextMenuChoiceMade(key: choiceStrings) {
+  if (!currentlySelectedObject) {
+    console.warn("No Object selected for context menu");
+    return;
+  }
+  if (key == "FOCUS") {
+    tween = new Tween(controls.target)
+    .to(currentlySelectedObject.position, 75)
+    .onUpdate((val) => {
+      controls.target = val;
+      camera.lookAt(val);
+    })
+    .start();
+  } else if (key == "APPLY") {
+    console.log(activeDocument);
+    if (currentlySelectedObject instanceof THREE.Mesh) {
+      let texture = documentIDsToTextures.get(activeDocument);
+      if (texture) {
+        console.log(texture);
+        currentlySelectedObject.material = textureUUIDsToMaterials.get(texture.uuid);
+        console.log(currentlySelectedObject.material);
+      }
+    }
+  }
+
+  renderUI(false, new THREE.Vector2(0, 0)); // Close the context menu
 }
 
 /**
@@ -241,4 +369,8 @@ function selectFile(contentType: string): Promise<File> {
         };
         input.click();
     });
+}
+
+function returnFocus() {
+  window.uxpHost.postMessage("ReturnFocus");
 }
