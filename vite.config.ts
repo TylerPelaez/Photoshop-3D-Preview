@@ -23,7 +23,9 @@ export default defineConfig({
     emptyOutDir: !shouldNotEmptyDir,
     rollupOptions: {
       external: [
-        "photoshop",         "3dtexturepreview.uxpaddon",         "uxp",
+        "photoshop",         
+        "bolt-uxp-hybrid.uxpaddon",         
+        "uxp",
         "fs",
         "os",
         "path",

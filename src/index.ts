@@ -3,18 +3,40 @@ import Queue from './lib/queue';
 import { photoshop } from "./globals";
 import { ActionDescriptor } from 'photoshop/dom/CoreModules';
 import { notify } from './api/photoshop';
+import { imaging } from 'photoshop/dom/ImagingModule';
 
+import { DebouncedFunc } from "lodash";
+import throttle from 'lodash.throttle';
+
+const BATCH_SIZE = 512 * 512;
+let addon: any;
 const app = photoshop.app;
 const core = photoshop.core;
 const PhotoshopAction = photoshop.action;  
-const imaging = photoshop.imaging;
+const imagingApi = photoshop.imaging;
 const executeAsModal = core.executeAsModal;
 
+let targetSizeScaling = 0.5;
 let updates = new Queue<ImageUpdateData>();
 let webviewReady = false;
 
+let documentDebouncers = new Map<number, DebouncedFunc<typeof performPixelUpdate>>();
+
+
+
 interface ImageChangeDescriptor {
     documentID: number;
+}
+
+interface UpdateMessage {
+  type: "FULL_UPDATE" | "PARTIAL_UPDATE",
+  documentID: number,
+  width: number,
+  height: number,
+  componentSize: number,
+  pixelString: string,
+  pixelBatchSize: number,
+  pixelBatchOffset: number,
 }
 
 interface ImageUpdateData {
@@ -24,7 +46,11 @@ interface ImageUpdateData {
   components: number,
   componentSize: 8 | 16 | 32,
   pixelData: Uint8Array | Uint16Array | Float32Array;
+  imagingData: imaging.PhotoshopImageData;
+  totalPixels: number,
+  pixelsPushed: number,
 }
+
 
 init();
 
@@ -46,6 +72,13 @@ function init()
       else if (e.data === "ReturnFocus") {
         returnPhotoshopFocus();
       }
+      else if (e.data === "HalfRes") {
+        targetSizeScaling = 0.5;
+        pushAllUpdates();
+      } else if (e.data === "FullRes") {
+        targetSizeScaling = 1;
+        pushAllUpdates();
+      }
     });
     
     updateDocument();
@@ -62,11 +95,35 @@ function pushAllUpdates() {
   });
 }
 
-async function handleImageChanged(event: string | null, descriptor: ActionDescriptor | ImageChangeDescriptor)
+async function handleImageChanged(_event: string | null, descriptor: ActionDescriptor | ImageChangeDescriptor): Promise<void>
 {
     var documentID = descriptor.documentID;
+
+    if (!documentDebouncers.has(documentID)) {
+      
+      documentDebouncers.set(documentID, throttle(performPixelUpdate, 2000, {trailing: true, leading: true}));
+    }
+    
+    let debouncedFunc = documentDebouncers.get(documentID)!;
+    
+    return debouncedFunc(documentID);
+}
+
+async function performPixelUpdate(documentID: number): Promise<void>
+{
     try {
-        await executeAsModal((ctx,d) => queuePixelData(documentID), {"commandName": "Updating Texture Data"});
+        console.log("queuing data for " + documentID);
+        console.log("Queue Pixel Data Start: " + window.performance.now());
+
+        let document = app.documents.find((doc) => doc.id == documentID)!;
+
+        let targetSize = {
+          width: Math.round(document.width * targetSizeScaling),
+          height: Math.round(document.height * targetSizeScaling)
+        };
+
+        let getPixelsResult = await executeAsModal((ctx,d) => imagingApi.getPixels({documentID: documentID, componentSize: 8, targetSize}), {commandName: "Updating Texture Data", interactive: true});
+        await queuePixelData(documentID, getPixelsResult);
     }
     catch(e: any) {
         if (e.number == 9) {
@@ -78,73 +135,73 @@ async function handleImageChanged(event: string | null, descriptor: ActionDescri
     }
 }
 
-async function queuePixelData(documentID: number) {
-  console.log("queuing data for " + documentID);
-  console.log("Queue Pixel Data Start: " + window.performance.now());
+async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPixelsResult) {
+  console.log("Pixels gotten: " + window.performance.now());
+  let { width, height, components, componentSize } = getPixelsResult.imageData;
+  let imagingData = getPixelsResult.imageData;
 
-  const imagePromise = imaging.getPixels({documentID: documentID, componentSize: 8});
-  const pixelPromise = imagePromise.then(async function(getPixelsResult) {
-    console.log("Pixels gotten: " + window.performance.now());
-    let { width, height, components, componentSize } = getPixelsResult.imageData;
+  // force calling isChunky because the type def is inaccurate
+  var pixelData = await imagingData.getData({chunky: (imagingData as any).isChunky});
 
-    var pixelData = await getPixelsResult.imageData.getData({chunky: true});
-    
-    console.log("Data gotten: " + window.performance.now());
-
-    updates.enqueue({
-      documentID, 
-      width,
-      height,
-      components,
-      componentSize,
-      pixelData
-    });
+  updates.enqueue({
+    documentID, 
+    width,
+    height,
+    components,
+    componentSize,
+    pixelData,
+    imagingData,
+    pixelsPushed: 0,
+    totalPixels: width * height
   });
 
-  await pixelPromise;
-}
+
+
+  console.log("Data queued: " + window.performance.now());
+};
 
 async function processUpdates() {
   if (!webviewReady) return;
 
   let nextUpdate = updates.peek();
   if (nextUpdate) {
-      updates.dequeue();
-      console.log("Dequeued: " + window.performance.now());
-      await sendFullPixelData(nextUpdate);
-      console.log("PostProcess: " + window.performance.now());
+      await convertPixelDataToString(nextUpdate);
+
+      if (nextUpdate.pixelsPushed >= nextUpdate.totalPixels) {
+        nextUpdate.imagingData.dispose();
+        updates.dequeue();
+        console.log("Data dequeued: " + window.performance.now());
+      }
   }
 }
 
-function sendFullPixelData(update: ImageUpdateData): Promise<void> {
-  const {documentID, width, height, components, componentSize} = update;
-
-  let webview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
-
-  console.log("Send start: " + window.performance.now());
-
-  let chosenDocument;
-  app.documents.forEach(d => {
-    if (d.id == documentID) {
-      chosenDocument = d;
-    }
-  });
-
-  if (!chosenDocument) return Promise.resolve();
-
-  return convertPixelDataToString(update).then(modifiedPixelData => {
-    console.log("Conversion Done: " + window.performance.now());
-    webview.postMessage({type: "FULL_UPDATE", pixels: modifiedPixelData, width, height, components, componentSize, documentID}, "*", null);
-    console.log("Post Done: " + window.performance.now());
-  });
-}
-
-
-async function convertPixelDataToString(update: ImageUpdateData): Promise<string | undefined> {
+async function convertPixelDataToString(update: ImageUpdateData): Promise<void> {
     try {
-        const addon = await require("bolt-uxp-hybrid.uxpaddon");
-        const result = addon.convert_to_string(update.width, update.height, update.components, update.pixelData.buffer);
-        return result;
+        if (!addon) {
+          addon = await require("bolt-uxp-hybrid.uxpaddon");
+        }
+
+        const nextBatchSize = Math.min(BATCH_SIZE, update.totalPixels - update.pixelsPushed);
+        
+        const result = addon.convert_to_string(
+          update.pixelData.buffer, 0, update.components, 
+          (update.imagingData as any).isChunky, update.pixelsPushed, nextBatchSize
+        );
+
+        let webview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
+        webview.postMessage({
+          type: "PARTIAL_UPDATE",
+          documentID: update.documentID, 
+          width: update.width, 
+          height: update.height, 
+          componentSize: update.componentSize,
+          pixelBatchOffset: update.pixelsPushed,
+          pixelBatchSize: nextBatchSize,
+          pixelString: result
+        }, "*", null);
+
+        update.pixelsPushed += nextBatchSize;  
+
     } catch (err) {
         console.log("Command failed", err);
     }

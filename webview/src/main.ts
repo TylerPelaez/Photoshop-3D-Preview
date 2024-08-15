@@ -134,49 +134,72 @@ function onMessageReceived(event: MessageEvent) {
   console.log("Received: " + window.performance.now());
   let data = event.data;
   console.log("Deserialized?: " + data.type + " " + window.performance.now()); 
-  if (data.type == "FULL_UPDATE") {
+  if (data.type == "FULL_UPDATE" || data.type == "PARTIAL_UPDATE") {
     let width = data.width;
     let height = data.height;  
     let documentID = data.documentID;
     console.log(documentID);
 
-    let pixelData = new Uint8Array(4 * width * height);
-    for (let i = 0; i < data.pixels.length; i++) {
-      pixelData[i] = data.pixels[i].charCodeAt();
-    }
+    let texture: THREE.DataTexture;
+    let pixelData: Uint8Array;
 
-    console.log("Decode Done: " + window.performance.now());
+    let pixelDataLength = 4 * width * height;
+    let pixelStringStartIndex = data.pixelBatchOffset * 4;
+    let pixelStringEndIndex = pixelStringStartIndex + data.pixelBatchSize * 4;
 
-    let materialToUpdate: THREE.MeshBasicMaterial | null = null;
+    let updateMaterial: THREE.MeshBasicMaterial | undefined;
 
     if (documentIDsToTextures.has(documentID)) {
-      let texture = documentIDsToTextures.get(documentID)!;
-      let uuid = texture.uuid;
-      texture?.dispose();
-      documentIDsToTextures.delete(documentID);
-      materialToUpdate = textureUUIDsToMaterials.get(uuid)!;
-      textureUUIDsToMaterials.delete(uuid);
+      let oldTexture = documentIDsToTextures.get(documentID)!;
+      if (oldTexture.image.width != width || oldTexture.image.height != height) {
+        updateMaterial = textureUUIDsToMaterials.get(oldTexture.uuid);
+        textureUUIDsToMaterials.delete(oldTexture.uuid);
+        documentIDsToTextures.delete(documentID);
+        oldTexture?.dispose();
+      }
     }
 
-    let texture = new THREE.DataTexture(pixelData, width, height);
-    texture.flipY = true;
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.magFilter = texture.minFilter = THREE.LinearFilter;
+
+    if (!documentIDsToTextures.has(documentID)) {
+      pixelData = new Uint8Array(pixelDataLength);
+
+      for (let i = 0; i < pixelStringStartIndex; i++) {
+        pixelData[i] = 0;
+      }
+      for (let i = pixelStringStartIndex; i < pixelStringEndIndex; i++) {
+        pixelData[i] = data.pixelString[i].charCodeAt();
+      }
+      for (let i = pixelStringEndIndex; i < pixelDataLength; i++) {
+        pixelData[i] = 0;
+      }
+
+      texture = new THREE.DataTexture(pixelData, width, height);
+      texture.flipY = true;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = texture.minFilter = THREE.LinearFilter;
+      
+      documentIDsToTextures.set(documentID, texture);
+
+      if (updateMaterial) {
+        updateMaterial.map = texture;
+        textureUUIDsToMaterials.set(texture.uuid, updateMaterial);
+      } else {
+        let material = new THREE.MeshBasicMaterial({map: texture}); 
+        textureUUIDsToMaterials.set(texture.uuid, material);
+      }
+    } else {
+      texture = documentIDsToTextures.get(documentID)!;
+      pixelData = texture.image.data as Uint8Array;
+
+      for (let i = 0; i < data.pixelString.length; i++) {
+        pixelData[pixelStringStartIndex + i] = data.pixelString[i].charCodeAt();
+      }
+    }
 
     texture.needsUpdate = true;
-    
-    documentIDsToTextures.set(documentID, texture);
-
-    if (materialToUpdate) {
-      materialToUpdate.map = texture;
-      textureUUIDsToMaterials.set(texture.uuid, materialToUpdate);
-    } else {
-      let material = new THREE.MeshBasicMaterial({map: texture}); 
-      textureUUIDsToMaterials.set(texture.uuid, material);
-    }
-
+    console.log("Decode Done: " + window.performance.now());
 
   } else if (data.type == "DOCUMENT_CHANGED") {
     activeDocument = data.documentID;

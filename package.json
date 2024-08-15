@@ -17,19 +17,24 @@
     "mac-build-sign": "mac-build && node mac-sign.js",
     "win-build": "dotnet msbuild src/hybrid/win/bolt-uxp-hybrid.sln"
   },
-  "dependencies": {},
   "devDependencies": {
-    "npm-run-all": "^4.1.5",
     "@adobe/cc-ext-uxp-types": "https://github.com/justintaylor-dev/cc-ext-uxp-types.git",
     "@types/node": "^20.8.7",
     "@types/photoshop": "^25.0.2",
     "@types/ws": "^8.5.8",
     "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
+    "npm-run-all": "^4.1.5",
     "sass": "^1.69.5",
     "typescript": "^5.0.2",
     "vite": "^5.1.1",
-    "ws": "^8.14.2",
-    "dotenv": "^16.4.5",
-    "vite-uxp-plugin": "^0.1.0"
+    "vite-uxp-plugin": "^0.1.0",
+    "ws": "^8.14.2"
+  },
+  "dependencies": {
+    "@types/lodash.throttle": "^4.1.9",
+    "@types/lodash.debounce": "^4.0.9",
+    "lodash.debounce": "^4.0.8",
+    "lodash.throttle": "^4.1.1"
   }
 }

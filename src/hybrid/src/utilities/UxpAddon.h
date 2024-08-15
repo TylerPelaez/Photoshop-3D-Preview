@@ -14,6 +14,7 @@
 #include <memory.h>
 #include <stdio.h>
 #include <string>
+#include <stdexcept>
 
 #include "../api/UxpAddonShared.h"
 
@@ -65,7 +66,7 @@ using terminateAddonCallback = std::function<void(addon_env env)>;
 
 inline void Check(addon_status status) {
     if (status != addon_ok)
-        throw "error";
+        throw std::runtime_error(std::string("UXP Error with error status: ") + std::to_string(status));
 }
 
 // Return a V8 error object from a current pending exception.
