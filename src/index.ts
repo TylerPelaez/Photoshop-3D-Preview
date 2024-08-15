@@ -30,6 +30,11 @@ interface ImageChangeDescriptor {
     documentID: number;
 }
 
+interface CloseDescriptor {
+  documentID: number,
+  _isCommand: boolean,
+}
+
 interface UpdateMessage {
   type: "FULL_UPDATE" | "PARTIAL_UPDATE",
   documentID: number,
@@ -119,7 +124,10 @@ async function performPixelUpdate(documentID: number): Promise<void>
         console.log("queuing data for " + documentID);
         console.log("Queue Pixel Data Start: " + window.performance.now());
 
-        let document = app.documents.find((doc) => doc.id == documentID)!;
+        let document = app.documents.find((doc) => doc.id == documentID);
+        if (!document) {
+          return Promise.resolve();
+        }
 
         let targetSize = {
           width: Math.round(document.width * targetSizeScaling),
@@ -130,12 +138,12 @@ async function performPixelUpdate(documentID: number): Promise<void>
         await queuePixelData(documentID, getPixelsResult);
     }
     catch(e: any) {
-        if (e.number == 9) {
-            notify("executeAsModal was rejected (some other plugin is currently inside a modal scope)");
-        }
-        else {
-          notify(e);
-        }
+      if (e.number == 9) {
+        console.error("executeAsModal was rejected (some other plugin is currently inside a modal scope)");
+      }
+      else {
+        console.error(e);
+      }
     }
 }
 
@@ -160,7 +168,6 @@ async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPi
   });
 
 
-
   console.log("Data queued: " + window.performance.now());
 };
 
@@ -171,6 +178,7 @@ async function processUpdates() {
     updateDocument();
   }
 
+
   let nextUpdate = updates.peek();
   if (nextUpdate) {
     let updateSent = false;
@@ -178,6 +186,11 @@ async function processUpdates() {
       updateSent = await convertPixelDataToString(nextUpdate);
 
       if (nextUpdate.pixelsPushed >= nextUpdate.totalPixels) {
+        if (!app.documents.find((d) => nextUpdate.documentID == d.id)) {
+          // Reaffirm that we've closed all the resources in case any snuck through the end of the queue (unlikely)
+          onClose(null, {documentID: nextUpdate.documentID, _isCommand: true}); 
+        }
+
         nextUpdate.imagingData.dispose();
         updates.dequeue();
         console.log("Data dequeued: " + window.performance.now());
@@ -233,20 +246,18 @@ async function convertPixelDataToString(update: ImageUpdateData): Promise<boolea
 }
 
 
-function onSelect(event: string, descriptor: ActionDescriptor) {
+function onSelect(event: string | null, descriptor: ActionDescriptor) {
   if (descriptor._target[0]._ref=="document") 
     updateDocument();
 }
 
-async function onClose(event: string, descriptor: ActionDescriptor) {
+async function onClose(event: string | null, descriptor: ActionDescriptor | CloseDescriptor) {
   if (!descriptor._isCommand) return
   
   try {
     if (!addon) {
       addon = await require("bolt-uxp-hybrid.uxpaddon");
     }
-
-
 
     addon.close_document(descriptor.documentID);
     webview.postMessage({type: "DOCUMENT_CLOSED", documentID: descriptor.documentID}, "*", null);
