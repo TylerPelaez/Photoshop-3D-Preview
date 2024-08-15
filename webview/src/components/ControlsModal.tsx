@@ -1,26 +1,20 @@
 import { useState } from "react";
-import { GridSettings } from '@api/Settings';
+import { ControlsSettings, GridSettings } from '@api/Settings';
 import { Button, ModalHeader, ModalBody, ModalFooter, Input, Checkbox } from "@nextui-org/react";
 import React from "react";
 
 
 
-function isValidNumber(value: string) {
-  value = value.trim();
-  if (!value) {
-    return false;
-  }
-  value = value.replace(/^0+/, "") || "0";
-  var n = Math.floor(Number(value));
-  return n !== Infinity && String(n) === value && n > 0;
-};
+interface ControlsModalProps {
+  controlSettings: ControlsSettings, 
+  onClose: ((val: ControlsSettings) => void)
+}
 
 
-export default function GridSettingsModal({gridSettings, onClose}: {gridSettings: GridSettings, onClose: ((val: GridSettings) => void)}) {
+export default function ControlsModal({controlSettings, onClose}: ControlsModalProps) {
   const [size, setSize] = useState<string>(gridSettings.size.toString());
   const [divisions, setDivisions] = useState<string>(gridSettings.divisions.toString());
   const [visible, setVisible] = useState<boolean>(gridSettings.visible);
-
 
   return (
     <>

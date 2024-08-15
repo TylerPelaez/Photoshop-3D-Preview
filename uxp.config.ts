@@ -57,7 +57,7 @@ const manifest: UXP_Manifest_Webview_Support = {
     },
   ],
   requiredPermissions: {
-    localFileSystem: "fullAccess",
+    localFileSystem: "plugin",
     launchProcess: {
       schemes: ["https", "slack", "file", "ws"],
       extensions: [".psd", ".bat", ".cmd"],

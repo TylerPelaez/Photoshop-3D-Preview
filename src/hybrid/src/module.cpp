@@ -61,6 +61,8 @@ public:
     int64_t batch_pixel_offset;
     int64_t batch_pixel_size;
     
+    bool force_full_update;
+
     size_t pixel_data_byte_length;
 };
 
@@ -100,8 +102,8 @@ addon_value ConvertToString(addon_env env, addon_callback_info info) {
     try {
 
         // 4 Arguments are expected: Width, height, Image Data component count, and the pixel data as a UInt8Array
-        size_t argc = 6;
-        addon_value args[6];
+        size_t argc = 7;
+        addon_value args[7];
         
         Check(UxpAddonApis.uxp_addon_get_cb_info(env, info, &argc, args, nullptr, nullptr));
 
@@ -115,6 +117,7 @@ addon_value ConvertToString(addon_env env, addon_callback_info info) {
         Check(UxpAddonApis.uxp_addon_get_value_bool(env, args[3], &params.is_chunky));
         Check(UxpAddonApis.uxp_addon_get_value_int64(env, args[4], &params.batch_pixel_offset));
         Check(UxpAddonApis.uxp_addon_get_value_int64(env, args[5], &params.batch_pixel_size));
+        Check(UxpAddonApis.uxp_addon_get_value_bool(env, args[6], &params.force_full_update));
 
 
         return ConvertBatchToString(env, params);
@@ -147,7 +150,8 @@ addon_value ConvertBatchToString(addon_env env, const TaskParams& p) {
 
         char16_t* modified_pixel_data = &(data[p.batch_pixel_offset * 4]);
 
-        bool changed = false;
+        // If force full update is enabled, then always assume pixels have been changed to ensure we send them to the webview
+        bool changed = p.force_full_update;
 
         if (p.is_chunky) {
             size_t beginning = p.batch_pixel_offset * p.components;

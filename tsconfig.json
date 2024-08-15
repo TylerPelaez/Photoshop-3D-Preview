@@ -18,6 +18,8 @@
     "src/**/*.ts",
     "src/**/*.js",
     "src/*.ts",
+    "src/api/app/*.ts",
+    "src/api/app/*.d.ts",
     "./uxp.config.ts",
     "package.json"
   ]

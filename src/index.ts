@@ -1,12 +1,13 @@
 import Queue from './lib/queue';
 
-import { photoshop } from "./globals";
+import { photoshop } from "./lib/globals";
 import { ActionDescriptor } from 'photoshop/dom/CoreModules';
-import { notify } from './api/photoshop';
 import { imaging } from 'photoshop/dom/ImagingModule';
 
 import { DebouncedFunc } from "lodash";
 import throttle from 'lodash.throttle';
+import { WebviewTargetMessage, PluginTargetMessage } from './api/app/Messages';
+import SettingsManager from './lib/SettingsManager';
 
 const BATCH_SIZE = 512 * 512;
 let addon: any;
@@ -18,6 +19,7 @@ const executeAsModal = core.executeAsModal;
 const webview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
 
 
+let settingsManager: SettingsManager;
 let targetSizeScaling = 0.5;
 let updates = new Queue<ImageUpdateData>();
 let webviewReady = false;
@@ -35,17 +37,6 @@ interface CloseDescriptor {
   _isCommand: boolean,
 }
 
-interface UpdateMessage {
-  type: "FULL_UPDATE" | "PARTIAL_UPDATE",
-  documentID: number,
-  width: number,
-  height: number,
-  componentSize: number,
-  pixelString: string,
-  pixelBatchSize: number,
-  pixelBatchOffset: number,
-}
-
 interface ImageUpdateData {
   documentID: number,
   width: number,
@@ -56,6 +47,7 @@ interface ImageUpdateData {
   imagingData: imaging.PhotoshopImageData;
   totalPixels: number,
   pixelsPushed: number,
+  forceFullUpdate: boolean,
 }
 
 
@@ -63,62 +55,72 @@ init();
 
 function init()
 {  
-    PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
-    // historyStateChanged fires whenever the image is changed
-    PhotoshopAction.addNotificationListener(['historyStateChanged'], handleImageChanged);
-    PhotoshopAction.addNotificationListener(["select"], onSelect);
-    PhotoshopAction.addNotificationListener(["close"], onClose);
-    PhotoshopAction.addNotificationListener(["newDocument"], (_e, d) => updateDocument());
+  settingsManager = new SettingsManager();
 
-    window.addEventListener("message", (e) => {
-      if (e.data === "Ready") {
-        webviewReady = true;   
-        updateDocument();     
-      }
-      else if (e.data === "RequestUpdate") {
-        pushAllUpdates();
-      }
-      else if (e.data === "ReturnFocus") {
-        returnPhotoshopFocus();
-      }
-      else if (e.data === "HalfRes") {
-        targetSizeScaling = 0.5;
-        pushAllUpdates();
-      } else if (e.data === "FullRes") {
-        targetSizeScaling = 1;
-        pushAllUpdates();
-      }
-    });
+  PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
+  // historyStateChanged fires whenever the image is changed
+  PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => handleImageChanged(descriptor.documentID));
+  PhotoshopAction.addNotificationListener(["select"], onSelect);
+  PhotoshopAction.addNotificationListener(["close"], onClose);
+  PhotoshopAction.addNotificationListener(["newDocument"], (_e, d) => updateDocument());
+
+  window.addEventListener("message", (e: MessageEvent<PluginTargetMessage>) => {
+    let data = e.data;
     
-    updateDocument();
-    // Get Current Document Pixel Data
-    pushAllUpdates();
-    setInterval(processUpdates, 16);
+    if (data.type === "Ready") {
+      webviewReady = true;
+      postToWebview({type: "PUSH_SETTINGS", settings: settingsManager.getSettings()});
+
+      updateDocument();     
+    }
+    else if (data.type === "RequestUpdate") {
+      pushAllUpdates();
+    }
+    else if (data.type === "ReturnFocus") {
+      returnPhotoshopFocus();
+    }
+    else if (data.type === "UpdateSettings") {
+      let newSettings = data.settings;
+      settingsManager.updateSettings(newSettings);
+
+      if (!approximatelyEqual(newSettings.displaySettings.textureResolutionScale, targetSizeScaling)) {
+        targetSizeScaling = newSettings.displaySettings.textureResolutionScale;
+        pushAllUpdates();
+      }
+    } else {
+      console.error("Received Unknown Message:" + data);
+    }
+  });
+  
+  updateDocument();
+  // Get Current Document Pixel Data
+  pushAllUpdates();
+  setInterval(processUpdates, 16);
 }
 
 
 
 function pushAllUpdates() {
   app.documents.forEach(document => {
-    handleImageChanged(null, {documentID: document.id});
+    handleImageChanged(document.id, true);
   });
 }
 
-async function handleImageChanged(_event: string | null, descriptor: ActionDescriptor | ImageChangeDescriptor): Promise<void>
+async function handleImageChanged(documentID: number, forceFullUpdate: boolean = false): Promise<void>
 {
-    var documentID = descriptor.documentID;
+  if (forceFullUpdate) return performPixelUpdate(documentID, forceFullUpdate); 
 
-    if (!documentDebouncers.has(documentID)) {
-      
-      documentDebouncers.set(documentID, throttle(performPixelUpdate, 2000, {trailing: true, leading: true}));
-    }
+  if (!documentDebouncers.has(documentID)) {
     
-    let debouncedFunc = documentDebouncers.get(documentID)!;
-    
-    return debouncedFunc(documentID);
+    documentDebouncers.set(documentID, throttle(performPixelUpdate, 2000, {trailing: true, leading: true}));
+  }
+  
+  let debouncedFunc = documentDebouncers.get(documentID)!;
+  
+  return debouncedFunc(documentID, forceFullUpdate);
 }
 
-async function performPixelUpdate(documentID: number): Promise<void>
+async function performPixelUpdate(documentID: number, forceFullUpdate: boolean): Promise<void>
 {
     try {
         console.log("queuing data for " + documentID);
@@ -135,7 +137,7 @@ async function performPixelUpdate(documentID: number): Promise<void>
         };
 
         let getPixelsResult = await executeAsModal((ctx,d) => imagingApi.getPixels({documentID: documentID, componentSize: 8, targetSize}), {commandName: "Updating Texture Data", interactive: true});
-        await queuePixelData(documentID, getPixelsResult);
+        await queuePixelData(documentID, getPixelsResult, forceFullUpdate);
     }
     catch(e: any) {
       if (e.number == 9) {
@@ -147,7 +149,7 @@ async function performPixelUpdate(documentID: number): Promise<void>
     }
 }
 
-async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPixelsResult) {
+async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPixelsResult, forceFullUpdate: boolean) {
   console.log("Pixels gotten: " + window.performance.now());
   let { width, height, components, componentSize } = getPixelsResult.imageData;
   let imagingData = getPixelsResult.imageData;
@@ -164,7 +166,8 @@ async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPi
     pixelData,
     imagingData,
     pixelsPushed: 0,
-    totalPixels: width * height
+    totalPixels: width * height,
+    forceFullUpdate,
   });
 
 
@@ -202,9 +205,6 @@ async function processUpdates() {
 
 async function convertPixelDataToString(update: ImageUpdateData): Promise<boolean> {
   try {
-    //console.log("Start Convert: " + window.performance.now());
-
-
     if (!addon) {
       addon = await require("bolt-uxp-hybrid.uxpaddon");
     }
@@ -213,18 +213,16 @@ async function convertPixelDataToString(update: ImageUpdateData): Promise<boolea
     
     const result = addon.convert_to_string(
       update.pixelData.buffer, update.documentID, update.components, 
-      (update.imagingData as any).isChunky, update.pixelsPushed, nextBatchSize
+      (update.imagingData as any).isChunky, update.pixelsPushed, nextBatchSize, update.forceFullUpdate
     );
     
-    if (!result) {
+    if (!update.forceFullUpdate && !result) {
       update.pixelsPushed += nextBatchSize;  
-      //console.log("Batch skipped: " + window.performance.now());
       return false;
     }
 
-    //console.log("Start Post: " + window.performance.now());
 
-    webview.postMessage({
+    postToWebview({
       type: "PARTIAL_UPDATE",
       documentID: update.documentID, 
       width: update.width, 
@@ -233,11 +231,9 @@ async function convertPixelDataToString(update: ImageUpdateData): Promise<boolea
       pixelBatchOffset: update.pixelsPushed,
       pixelBatchSize: nextBatchSize,
       pixelString: result
-    }, "*", null);
+    });
 
     update.pixelsPushed += nextBatchSize;  
-
-    //console.log("Finish Convert: " + window.performance.now());
     return true;
   } catch (err) {
       console.log("Command failed", err);
@@ -260,7 +256,7 @@ async function onClose(event: string | null, descriptor: ActionDescriptor | Clos
     }
 
     addon.close_document(descriptor.documentID);
-    webview.postMessage({type: "DOCUMENT_CLOSED", documentID: descriptor.documentID}, "*", null);
+    postToWebview({type: "DOCUMENT_CLOSED", documentID: descriptor.documentID});
     
     updateDocument();
   } catch (err) {
@@ -271,7 +267,11 @@ async function onClose(event: string | null, descriptor: ActionDescriptor | Clos
 
 function updateDocument() {
   lastActiveDocumentId = app.activeDocument.id;
-  webview.postMessage({type: "DOCUMENT_CHANGED", documentID: app.activeDocument.id}, "*", null);
+  postToWebview({type: "DOCUMENT_CHANGED", documentID: app.activeDocument.id});
+}
+
+function postToWebview(msg: WebviewTargetMessage) {
+  webview.postMessage(msg, "*", null);
 }
 
 async function returnPhotoshopFocus() {
@@ -284,4 +284,5 @@ async function returnPhotoshopFocus() {
 }
 
 
-
+const approximatelyEqual = (v1: number, v2: number, epsilon = 0.001) =>
+  Math.abs(v1 - v2) < epsilon;

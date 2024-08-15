@@ -16,7 +16,7 @@ function isValidNumber(value: string) {
 };
 
 
-export default function GridSettingsModal({gridSettings, onClose}: {gridSettings: GridSettings, onClose: ((val: GridSettings) => void)}) {
+export default function CameraSettingsModal({gridSettings, onClose}: {gridSettings: GridSettings, onClose: ((val: GridSettings) => void)}) {
   const [size, setSize] = useState<string>(gridSettings.size.toString());
   const [divisions, setDivisions] = useState<string>(gridSettings.divisions.toString());
   const [visible, setVisible] = useState<boolean>(gridSettings.visible);
