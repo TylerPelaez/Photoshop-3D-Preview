@@ -68,20 +68,32 @@ addon_value ConvertBatchToString(addon_env env, const TaskParams& params);
 
 
 addon_value CloseDocument(addon_env env, addon_callback_info info) {
-    size_t argc = 1;
-    addon_value args[1];
+    try {
+    
+        size_t argc = 1;
+        addon_value args[1];
 
-    Check(UxpAddonApis.uxp_addon_get_cb_info(env, info, &argc, args, nullptr, nullptr));
+        Check(UxpAddonApis.uxp_addon_get_cb_info(env, info, &argc, args, nullptr, nullptr));
 
-    int64_t document_id;
+        int64_t document_id;
 
-    Check(UxpAddonApis.uxp_addon_get_value_int64(env, args[0], &document_id));
+        Check(UxpAddonApis.uxp_addon_get_value_int64(env, args[0], &document_id));
 
-    document_id_to_pixel_array.erase(document_id);
+        document_id_to_pixel_array.erase(document_id);
+
+        addon_value result;
+        Check(UxpAddonApis.uxp_addon_get_undefined(env, &result));
+
+        return result;
+    }
+    catch (const std::exception& exc)
+    {
+        return GetErrorMessage(env, exc.what());
+    }
+    catch (...) {
+        return CreateErrorFromException(env);
+    }
 }
-
-
-
 
 addon_value ConvertToString(addon_env env, addon_callback_info info) {
     LogTiming("ConvertToString Entry");
@@ -96,14 +108,6 @@ addon_value ConvertToString(addon_env env, addon_callback_info info) {
         TaskParams params = TaskParams();
 
         Check(UxpAddonApis.uxp_addon_get_arraybuffer_info(env, args[0], (void**)&params.pixel_data, &params.pixel_data_byte_length));
-
-        //LogTiming("Copy Speed Begin");
-
-        //auto new_pixel_data = std::make_shared<std::vector<int8_t>>();
-
-        //new_pixel_data.get()->insert(new_pixel_data.get()->end(), &params.pixel_data[0], &params.pixel_data[params.pixel_data_byte_length]);
-
-        //LogTiming("Copy Speed End");
 
 
         Check(UxpAddonApis.uxp_addon_get_value_int64(env, args[1], &params.document_id));

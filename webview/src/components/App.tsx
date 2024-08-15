@@ -39,7 +39,7 @@ function App(props: AppProps) {
   }
 
   return (
-    <NextUIProvider>
+    <NextUIProvider disableAnimation>
       <main className="dark text-foreground">
         <Dropdown size="sm" radius="sm">
           <DropdownTrigger>

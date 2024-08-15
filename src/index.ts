@@ -24,7 +24,7 @@ let webviewReady = false;
 
 let documentDebouncers = new Map<number, DebouncedFunc<typeof performPixelUpdate>>();
 
-
+let lastActiveDocumentId: number;
 
 interface ImageChangeDescriptor {
     documentID: number;
@@ -62,6 +62,8 @@ function init()
     // historyStateChanged fires whenever the image is changed
     PhotoshopAction.addNotificationListener(['historyStateChanged'], handleImageChanged);
     PhotoshopAction.addNotificationListener(["select"], onSelect);
+    PhotoshopAction.addNotificationListener(["close"], onClose);
+    PhotoshopAction.addNotificationListener(["newDocument"], (_e, d) => updateDocument());
 
     window.addEventListener("message", (e) => {
       if (e.data === "Ready") {
@@ -165,21 +167,29 @@ async function queuePixelData(documentID: number, getPixelsResult: imaging.GetPi
 async function processUpdates() {
   if (!webviewReady) return;
 
+  if (lastActiveDocumentId != app.activeDocument.id) {
+    updateDocument();
+  }
+
   let nextUpdate = updates.peek();
   if (nextUpdate) {
-      await convertPixelDataToString(nextUpdate);
+    let updateSent = false;
+    while (!updateSent) {
+      updateSent = await convertPixelDataToString(nextUpdate);
 
       if (nextUpdate.pixelsPushed >= nextUpdate.totalPixels) {
         nextUpdate.imagingData.dispose();
         updates.dequeue();
         console.log("Data dequeued: " + window.performance.now());
+        break;
       }
+    }
   }
 }
 
-async function convertPixelDataToString(update: ImageUpdateData): Promise<void> {
+async function convertPixelDataToString(update: ImageUpdateData): Promise<boolean> {
   try {
-    console.log("Start Convert: " + window.performance.now());
+    //console.log("Start Convert: " + window.performance.now());
 
 
     if (!addon) {
@@ -195,11 +205,11 @@ async function convertPixelDataToString(update: ImageUpdateData): Promise<void> 
     
     if (!result) {
       update.pixelsPushed += nextBatchSize;  
-      console.log("Batch skipped: " + window.performance.now());
-      return;
+      //console.log("Batch skipped: " + window.performance.now());
+      return false;
     }
 
-    console.log("Start Post: " + window.performance.now());
+    //console.log("Start Post: " + window.performance.now());
 
     webview.postMessage({
       type: "PARTIAL_UPDATE",
@@ -211,25 +221,46 @@ async function convertPixelDataToString(update: ImageUpdateData): Promise<void> 
       pixelBatchSize: nextBatchSize,
       pixelString: result
     }, "*", null);
+
     update.pixelsPushed += nextBatchSize;  
 
-    console.log("Finish Convert: " + window.performance.now());
+    //console.log("Finish Convert: " + window.performance.now());
+    return true;
+  } catch (err) {
+      console.log("Command failed", err);
+  }
+  return false;
+}
+
+
+function onSelect(event: string, descriptor: ActionDescriptor) {
+  if (descriptor._target[0]._ref=="document") 
+    updateDocument();
+}
+
+async function onClose(event: string, descriptor: ActionDescriptor) {
+  if (!descriptor._isCommand) return
+  
+  try {
+    if (!addon) {
+      addon = await require("bolt-uxp-hybrid.uxpaddon");
+    }
+
+
+
+    addon.close_document(descriptor.documentID);
+    webview.postMessage({type: "DOCUMENT_CLOSED", documentID: descriptor.documentID}, "*", null);
+    
+    updateDocument();
   } catch (err) {
       console.log("Command failed", err);
   }
 }
 
 
-function onSelect(event: string, descriptor: ActionDescriptor) {
-  console.log("test");
-  console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor));
-  if (descriptor._target[0]._ref=="document") 
-    updateDocument();
-}
-
 function updateDocument() {
-  const panelWebview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
-  panelWebview.postMessage({type: "DOCUMENT_CHANGED", documentID: app.activeDocument.id}, "*", null);
+  lastActiveDocumentId = app.activeDocument.id;
+  webview.postMessage({type: "DOCUMENT_CHANGED", documentID: app.activeDocument.id}, "*", null);
 }
 
 async function returnPhotoshopFocus() {

@@ -58,6 +58,7 @@ let grid: THREE.GridHelper;
 
 let documentIDsToTextures = new Map<number, THREE.DataTexture>();
 let textureUUIDsToMaterials = new Map<string, THREE.MeshBasicMaterial>();
+let materialUUIDsToMeshes = new Map<string, Map<number, THREE.Mesh>>();
 let activeDocument: number;
 
 let userSettings = defaultUserSettings;
@@ -167,7 +168,7 @@ function onMessageReceived(event: MessageEvent) {
         pixelData[i] = 0;
       }
       for (let i = pixelStringStartIndex; i < pixelStringEndIndex; i++) {
-        pixelData[i] = data.pixelString[i].charCodeAt();
+        pixelData[i] = data.pixelString[i - pixelStringStartIndex].charCodeAt();
       }
       for (let i = pixelStringEndIndex; i < pixelDataLength; i++) {
         pixelData[i] = 0;
@@ -203,6 +204,18 @@ function onMessageReceived(event: MessageEvent) {
 
   } else if (data.type == "DOCUMENT_CHANGED") {
     activeDocument = data.documentID;
+  } else if (data.type == "DOCUMENT_CLOSED") {
+    if (!documentIDsToTextures.has(data.documentID)) return;
+    
+    let texture = documentIDsToTextures.get(data.documentID)!;
+    let material = textureUUIDsToMaterials.get(texture.uuid)!;
+    materialUUIDsToMeshes.get(material?.uuid)?.forEach((mesh: THREE.Mesh, id: number) => {
+      mesh.material = new THREE.MeshBasicMaterial();
+    });
+    materialUUIDsToMeshes.delete(material.uuid);
+    textureUUIDsToMaterials.delete(texture.uuid);
+    documentIDsToTextures.delete(data.documentID);
+    texture.dispose();
   }
   console.log("Message End: " + window.performance.now());
 }
@@ -365,8 +378,18 @@ function onContextMenuChoiceMade(key: choiceStrings) {
       let texture = documentIDsToTextures.get(activeDocument);
       if (texture) {
         console.log(texture);
+        let materialUUID = currentlySelectedObject.material.uuid;
+        if (materialUUIDsToMeshes.has(materialUUID)) {
+          let data = materialUUIDsToMeshes.get(materialUUID)!;
+          data.delete(currentlySelectedObject.id);
+        }
+
         currentlySelectedObject.material = textureUUIDsToMaterials.get(texture.uuid);
-        console.log(currentlySelectedObject.material);
+        materialUUID = currentlySelectedObject.material.uuid;
+        if (!materialUUIDsToMeshes.has(materialUUID)) {
+          materialUUIDsToMeshes.set(materialUUID, new Map<number, THREE.Mesh>());
+        }
+        materialUUIDsToMeshes.get(materialUUID)!.set(currentObject.id, currentlySelectedObject);
       }
     }
   }
