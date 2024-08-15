@@ -251,6 +251,19 @@ addon_value Init(addon_env env, addon_value exports, const addon_apis& addonAPIs
             addonAPIs.uxp_addon_throw_error(env, NULL, "Unable to populate exports");
         }
     }
+
+    {
+        status = addonAPIs.uxp_addon_create_function(env, NULL, 0, CloseDocument, NULL, &fn);
+        if (status != addon_ok) {
+            addonAPIs.uxp_addon_throw_error(env, NULL, "Unable to wrap native function");
+        }
+
+        status = addonAPIs.uxp_addon_set_named_property(env, exports, "close_document", fn);
+        if (status != addon_ok) {
+            addonAPIs.uxp_addon_throw_error(env, NULL, "Unable to populate exports");
+        }
+    }
+
     return exports;
 }
 
