@@ -15,6 +15,8 @@ const core = photoshop.core;
 const PhotoshopAction = photoshop.action;  
 const imagingApi = photoshop.imaging;
 const executeAsModal = core.executeAsModal;
+const webview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
+
 
 let targetSizeScaling = 0.5;
 let updates = new Queue<ImageUpdateData>();
@@ -176,35 +178,45 @@ async function processUpdates() {
 }
 
 async function convertPixelDataToString(update: ImageUpdateData): Promise<void> {
-    try {
-        if (!addon) {
-          addon = await require("bolt-uxp-hybrid.uxpaddon");
-        }
+  try {
+    console.log("Start Convert: " + window.performance.now());
 
-        const nextBatchSize = Math.min(BATCH_SIZE, update.totalPixels - update.pixelsPushed);
-        
-        const result = addon.convert_to_string(
-          update.pixelData.buffer, 0, update.components, 
-          (update.imagingData as any).isChunky, update.pixelsPushed, nextBatchSize
-        );
 
-        let webview = document.getElementById("panelWebview") as unknown as HTMLWebViewElement;
-        webview.postMessage({
-          type: "PARTIAL_UPDATE",
-          documentID: update.documentID, 
-          width: update.width, 
-          height: update.height, 
-          componentSize: update.componentSize,
-          pixelBatchOffset: update.pixelsPushed,
-          pixelBatchSize: nextBatchSize,
-          pixelString: result
-        }, "*", null);
-
-        update.pixelsPushed += nextBatchSize;  
-
-    } catch (err) {
-        console.log("Command failed", err);
+    if (!addon) {
+      addon = await require("bolt-uxp-hybrid.uxpaddon");
     }
+
+    const nextBatchSize = Math.min(BATCH_SIZE, update.totalPixels - update.pixelsPushed);
+    
+    const result = addon.convert_to_string(
+      update.pixelData.buffer, update.documentID, update.components, 
+      (update.imagingData as any).isChunky, update.pixelsPushed, nextBatchSize
+    );
+    
+    if (!result) {
+      update.pixelsPushed += nextBatchSize;  
+      console.log("Batch skipped: " + window.performance.now());
+      return;
+    }
+
+    console.log("Start Post: " + window.performance.now());
+
+    webview.postMessage({
+      type: "PARTIAL_UPDATE",
+      documentID: update.documentID, 
+      width: update.width, 
+      height: update.height, 
+      componentSize: update.componentSize,
+      pixelBatchOffset: update.pixelsPushed,
+      pixelBatchSize: nextBatchSize,
+      pixelString: result
+    }, "*", null);
+    update.pixelsPushed += nextBatchSize;  
+
+    console.log("Finish Convert: " + window.performance.now());
+  } catch (err) {
+      console.log("Command failed", err);
+  }
 }
 
 
