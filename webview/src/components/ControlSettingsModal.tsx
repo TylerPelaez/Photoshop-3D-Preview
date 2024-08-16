@@ -13,7 +13,6 @@ function capitalize(val: string) {
 }
 
 
-
 function getTabContent(scheme: ControlScheme, action: string) {
   let label = action;  
   let input = action == "Pan" ? scheme.pan : action == "Zoom" ? scheme.zoom : action == "Rotate" ? scheme.rotate : undefined;
@@ -55,7 +54,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
     let scheme = BuiltInSchemes.get(schemeType)!;
 
     tabs.push(
-      <Tab key={schemeType} title={capitalize(ControlSchemeType[schemeType])}>
+      <Tab className="flex justify-center w-full" key={schemeType} title={capitalize(ControlSchemeType[schemeType])}>
         <Listbox shouldHighlightOnFocus={false}  className="w-full max-w-[260px] border-small px-1 py-2 rounded-small border-default-200 dark:border-default-100">
           {["Pan", "Rotate", "Zoom"].map(action => getTabContent(scheme, action))}
         </Listbox>
@@ -81,7 +80,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
         </Tabs>
       </ModalBody>
       <ModalFooter>
-        <Button color="primary" onPress={(e) => {
+        <Button size="sm" radius="sm" color="primary" onPress={(e) => {
             onClose({...controlsSettings, scheme: selected});
           }
         }>

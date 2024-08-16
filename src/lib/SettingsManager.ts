@@ -13,7 +13,7 @@ const defaultUserSettings: UserSettings  = {
   },
   displaySettings: {
     cameraFOV: 75,
-    textureResolutionScale: 0.5,
+    textureResolutionScale: 1.0,
   },
   controlsSettings: {
     scheme: ControlSchemeType.PHOTOSHOP

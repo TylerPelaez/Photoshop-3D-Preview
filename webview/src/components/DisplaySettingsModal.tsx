@@ -54,7 +54,7 @@ export default function DisplaySettingsModal({displaySettings, onClose}: {displa
         />
       </ModalBody>
       <ModalFooter>
-        <Button color="primary" onPress={(e) => {
+        <Button size="sm" radius="sm" color="primary" onPress={(e) => {
             onClose({cameraFOV, textureResolutionScale:  textureResolutionScale / 100});
           }
         }>

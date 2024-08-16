@@ -35,7 +35,6 @@ const manifest: UXP_Manifest_Webview_Support = {
         default: "3D Texture Preview",
       },
       minimumSize: { width: 300, height: 150 },
-      maximumSize: { width: 2000, height: 2000 },
       preferredDockedSize: { width: 400, height: 300 },
       preferredFloatingSize: { width: 480, height: 320 },
       icons: [

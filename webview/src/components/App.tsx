@@ -15,6 +15,7 @@ export interface AppProps {
   onModelLoad: Function, 
   onUpdateSettings: (val: UserSettings) => void,
   contextMenuOpen: boolean,
+  hasObjectSelected: boolean,
   contextMenuPosition: Vector2,
   onContextMenuChoiceMade: (key: choiceStrings) => void
 }
@@ -98,7 +99,7 @@ function App(props: AppProps) {
             </ModalContent>  
           </Modal>
         ))}
-        <ContextMenu visible={props.contextMenuOpen} position={props.contextMenuPosition} onChoiceMade={props.onContextMenuChoiceMade} />
+        <ContextMenu hasObjectSelected={props.hasObjectSelected} visible={props.contextMenuOpen} position={props.contextMenuPosition} onChoiceMade={props.onContextMenuChoiceMade} />
       </main>
     </NextUIProvider>
   );

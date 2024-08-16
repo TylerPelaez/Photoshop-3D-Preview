@@ -14,7 +14,12 @@ export default {
     prefix: "nextui",
     addCommonColors: false,
     defaultTheme: "dark",
-    defaultExtendTheme: "dark"
+    defaultExtendTheme: "dark",
+    layout: {
+      borderWidth: {
+        small: "4px",
+      }
+    }
   })]
 }
 

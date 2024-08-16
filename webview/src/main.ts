@@ -58,7 +58,7 @@ let tween : Tween;
 let root : Root;
 
 let currentlySelectedObject : THREE.Object3D | null;
-let outlineMesh: THREE.Mesh | null;
+let outlineObject: THREE.Object3D | null;
 
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
@@ -117,9 +117,7 @@ function postPluginMessage(data: PluginTargetMessage) {
 
 //#region Plugin Message Handlers
 function onMessageReceived(event: MessageEvent<WebviewTargetMessage>) {
-  console.log("Received: " + window.performance.now());
   let data = event.data;
-  console.log("Deserialized?: " + data.type + " " + window.performance.now()); 
   if (data.type == "PARTIAL_UPDATE") {
     handleUpdate(data);
   } else if (data.type == "DOCUMENT_CHANGED") {
@@ -129,14 +127,12 @@ function onMessageReceived(event: MessageEvent<WebviewTargetMessage>) {
   } else if (data.type == "PUSH_SETTINGS") {
     onUpdateSettings(data.settings, false);
   }
-  console.log("Message End: " + window.performance.now());
 }
 
 function handleUpdate(data: PartialUpdate) {
   let width = data.width;
   let height = data.height;  
   let documentID = data.documentID;
-  console.log(documentID);
 
   let texture: THREE.DataTexture;
   let pixelData: Uint8Array;
@@ -197,7 +193,6 @@ function handleUpdate(data: PartialUpdate) {
   }
 
   texture.needsUpdate = true;
-  console.log("Decode Done: " + window.performance.now());
 }
 
 
@@ -253,14 +248,12 @@ function updateOrbitControls() {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  console.log(event.key);
   pressedKeys[event.key] = true;
   updateOrbitControls();
 }
 
 
 function onKeyUp(event: KeyboardEvent) {
-  console.log(event.key);
   pressedKeys[event.key] = false;
   updateOrbitControls();
 }
@@ -288,7 +281,7 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   for ( let i = 0; i < intersects.length; i ++ ) {
     let obj = intersects[i].object;
     if (obj instanceof THREE.Line) continue;
-    if (obj == outlineMesh) continue;
+    if (obj == outlineObject) continue;
     if (intersects[i].distance < minDistance) {
       minDistance = intersects[i].distance;
       minIndex = i;
@@ -305,27 +298,38 @@ function selectObject(object: THREE.Object3D | null) {
   if (currentlySelectedObject == object) return;
 
   if (currentlySelectedObject != null) {
-    scene.remove(outlineMesh!);
+    scene.remove(outlineObject!);
   }
 
   currentlySelectedObject = object;
   if (currentlySelectedObject != null) {
     if (object instanceof THREE.Mesh) {
+      console.log(object);
+
       let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
+      outlineObject = new THREE.Object3D();
 
-      outlineMesh = new THREE.Mesh(object.geometry, material);
-      outlineMesh.position.set(object.position.x, object.position.y, object.position.z);
-      outlineMesh.scale.multiplyScalar(1.05);
+      let center = new THREE.Vector3();
 
-      scene.add(outlineMesh);
+      object.geometry.computeBoundingBox();
+      object.geometry.boundingBox.getCenter(center);
+
+      let offset = new THREE.Vector3();
+      offset.addVectors(center, object.position);
+
+      outlineObject.position.set(offset.x, offset.y, offset.z);
+      let geometry = new THREE.Mesh(object.geometry, material);
+      outlineObject.attach(geometry);
+
+      geometry.position.set(-center.x, -center.y, -center.z);
+      outlineObject.scale.multiplyScalar(1.05);
+      scene.add(outlineObject);
     }
   }
 }
 
 
 function onPointerDown(event: PointerEvent) {
-  console.log(event);
-
   if (contextMenuOpen) {
     renderUI(false);
   }
@@ -351,6 +355,7 @@ function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector
     onUpdateSettings: onUpdateSettings, 
     onModelLoad: onLoadButtonClicked,
     contextMenuOpen: contextMenuVisible,
+    hasObjectSelected: currentlySelectedObject != null,
     contextMenuPosition: contextMenuPosition,
     onContextMenuChoiceMade: onContextMenuChoiceMade
   }));
@@ -372,11 +377,9 @@ function onContextMenuChoiceMade(key: choiceStrings) {
     })
     .start();
   } else if (key == "APPLY") {
-    console.log(activeDocument);
     if (currentlySelectedObject instanceof THREE.Mesh) {
       let texture = documentIDsToTextures.get(activeDocument);
       if (texture) {
-        console.log(texture);
         let materialUUID = currentlySelectedObject.material.uuid;
         if (materialUUIDsToMeshes.has(materialUUID)) {
           let data = materialUUIDsToMeshes.get(materialUUID)!;
@@ -437,6 +440,7 @@ function loadObject(objectFileURL: string, objectFileName: string) {
   if (currentObject) {
       scene.remove(currentObject);
   }
+  selectObject(null);
 
   postPluginMessage({type: "RequestUpdate"});
 
@@ -454,11 +458,11 @@ function loadObject(objectFileURL: string, objectFileName: string) {
     }
 
     // Assign everything to the current material
-    currentObject.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.material = new THREE.MeshBasicMaterial();
-      }
-    });
+    // currentObject.traverse(child => {
+    //   if (child instanceof THREE.Mesh) {
+    //     child.material = new THREE.MeshBasicMaterial();
+    //   }
+    // });
 
     scene.add(currentObject);
 
