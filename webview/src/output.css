@@ -3284,10 +3284,10 @@ video {
   --nextui-line-height-small: 1.25rem;
   --nextui-line-height-medium: 1.5rem;
   --nextui-line-height-large: 1.75rem;
-  --nextui-radius-small: 8px;
+  --nextui-radius-small: 4px;
   --nextui-radius-medium: 12px;
   --nextui-radius-large: 14px;
-  --nextui-border-width-small: 4px;
+  --nextui-border-width-small: 1px;
   --nextui-border-width-medium: 2px;
   --nextui-border-width-large: 3px;
   --nextui-box-shadow-small: 0px 0px 5px 0px rgb(0 0 0 / 0.02), 0px 2px 10px 0px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.3);
@@ -3404,10 +3404,10 @@ video {
   --nextui-line-height-small: 1.25rem;
   --nextui-line-height-medium: 1.5rem;
   --nextui-line-height-large: 1.75rem;
-  --nextui-radius-small: 8px;
+  --nextui-radius-small: 4px;
   --nextui-radius-medium: 12px;
   --nextui-radius-large: 14px;
-  --nextui-border-width-small: 4px;
+  --nextui-border-width-small: 1px;
   --nextui-border-width-medium: 2px;
   --nextui-border-width-large: 3px;
   --nextui-box-shadow-small: 0px 0px 5px 0px rgb(0 0 0 / 0.05), 0px 2px 10px 0px rgb(0 0 0 / 0.2), inset 0px 0px 1px 0px rgb(255 255 255 / 0.15);

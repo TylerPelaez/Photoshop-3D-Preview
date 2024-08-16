@@ -16,7 +16,7 @@ export default {
     defaultTheme: "dark",
     defaultExtendTheme: "dark",
     layout: {
-      borderWidth: {
+      radius: {
         small: "4px",
       }
     }

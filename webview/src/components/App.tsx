@@ -99,7 +99,8 @@ function App(props: AppProps) {
             </ModalContent>  
           </Modal>
         ))}
-        <ContextMenu hasObjectSelected={props.hasObjectSelected} visible={props.contextMenuOpen} position={props.contextMenuPosition} onChoiceMade={props.onContextMenuChoiceMade} />
+        {props.contextMenuOpen ? <ContextMenu hasObjectSelected={props.hasObjectSelected} position={props.contextMenuPosition} onChoiceMade={props.onContextMenuChoiceMade} /> : null}
+        
       </main>
     </NextUIProvider>
   );
