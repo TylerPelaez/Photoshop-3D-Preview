@@ -6,7 +6,7 @@ import { imaging } from 'photoshop/dom/ImagingModule';
 
 import { DebouncedFunc } from "lodash";
 import throttle from 'lodash.throttle';
-import { WebviewTargetMessage, PluginTargetMessage } from './api/app/Messages';
+import { WebviewTargetMessage, PluginTargetMessage } from "@api/types/Messages";
 import SettingsManager from './lib/SettingsManager';
 
 const BATCH_SIZE = 512 * 512;

@@ -1,9 +1,18 @@
 import { defineConfig } from "vite";
 import { runAction, uxp } from "vite-uxp-plugin";
 import { config } from "./uxp.config";
+import { resolve } from "path";
 
 const action = process.env.ACTION;
 const mode = process.env.MODE;
+
+const aliases = {
+  "@api": "api"
+}
+
+const resolvedAliases = Object.fromEntries(
+  Object.entries(aliases).map(([key, value]) => [key, resolve(__dirname, value)]),
+);
 
 if (action) {
   runAction({}, action);
@@ -37,5 +46,10 @@ export default defineConfig({
       },
     },
   },
+  resolve: {
+    alias: {
+        ...resolvedAliases
+    },
+},
   publicDir: "public",
 });

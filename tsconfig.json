@@ -11,15 +11,15 @@
     "allowJs": true,
     "checkJs": true,
     "isolatedModules": true,
-    "types": ["@adobe/cc-ext-uxp-types", "@types/photoshop", "@types/node"]
+    "types": ["@adobe/cc-ext-uxp-types", "@types/photoshop", "@types/node"],
+    "paths": { "@api/*": ["./api/*"], }
   },
   "include": [
     "src/**/*.d.ts",
     "src/**/*.ts",
     "src/**/*.js",
     "src/*.ts",
-    "src/api/app/*.ts",
-    "src/api/app/*.d.ts",
+    "api/**/*.ts",
     "./uxp.config.ts",
     "package.json"
   ]

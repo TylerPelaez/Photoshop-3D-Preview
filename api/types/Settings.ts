@@ -1,47 +1,51 @@
 /** @see {isUserSettings} ts-auto-guard:type-guard */
-export interface UserSettings {
+interface UserSettings {
   gridSettings: GridSettings;
   displaySettings: DisplaySettings;
   controlsSettings: ControlsSettings;
 }
 
-export interface GridSettings {
+interface GridSettings {
   size: number;
   divisions: number;
   visible: boolean;
 }
 
-export interface DisplaySettings {
+interface DisplaySettings {
   cameraFOV: number,
   textureResolutionScale: number,
 }
 
-export enum ControlSchemeType {
+enum ControlSchemeType {
   PHOTOSHOP,
   MAYA,
   BLENDER,
   CUSTOM,
 }
 
-export enum MouseButton {
+enum MouseButton {
   LEFT = 0,
   MIDDLE = 1,
   RIGHT = 2,
 }
 
-export interface InputCombination {
+interface InputCombination {
   key?: string,
   mouseButton: MouseButton
 }
 
-export interface ControlScheme {
+interface ControlScheme {
   scrollZoomEnabled: boolean,
   pan?: InputCombination,
   zoom?: InputCombination,
   rotate?: InputCombination,
 }
 
-export interface ControlsSettings {
+interface ControlsSettings {
   scheme: ControlSchemeType,
-  customSceme?: ControlScheme
+  customScheme?: ControlScheme
 }
+
+export type {UserSettings, GridSettings, DisplaySettings, ControlsSettings, ControlScheme, InputCombination};
+
+export {ControlSchemeType, MouseButton};

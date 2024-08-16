@@ -19,7 +19,7 @@
       "noUnusedLocals": true,
       "noUnusedParameters": true,
       "noFallthroughCasesInSwitch": true,
-      "paths": { "@api/*": ["../src/api/app/*"], }
+      "paths": { "@api/*": ["../api/*"], }
     },
     "include": ["src"]
   }

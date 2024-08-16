@@ -10,8 +10,9 @@ import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo.ts';
 import {Tween} from '@tweenjs/tween.js'
 
 
-import { UserSettings, GridSettings } from '@api/Settings.js';
-import { DocumentClosed, PartialUpdate, PluginTargetMessage, PushSettings, WebviewTargetMessage } from '@api/Messages.js';
+import { ControlScheme, ControlSchemeType, InputCombination, MouseButton, UserSettings } from "@api/types/Settings";
+import { BuiltInSchemes } from "./util/util.ts"
+import { DocumentClosed, PartialUpdate, PluginTargetMessage, WebviewTargetMessage } from "@api/types/Messages";
 
 import App from './components/App';
 import { choiceStrings } from './components/ContextMenu.tsx';
@@ -57,9 +58,10 @@ let tween : Tween;
 let root : Root;
 
 let currentlySelectedObject : THREE.Object3D | null;
-let contextMenuOpen : boolean = false;
+let outlineMesh: THREE.Mesh | null;
 
-let rightClickCancelled: boolean = false;
+let contextMenuOpen : boolean = false;
+let pressedKeys: {[_keyName: string]: boolean} = {};
 
 init();
 
@@ -71,7 +73,7 @@ function init() {
 
   // Init Three.js scene and helper oobjects
   scene = new THREE.Scene();
-  scene.background = new THREE.Color("#3D3D3D");
+  scene.background = new THREE.Color("#4D4D4D");
 
   renderer = new THREE.WebGLRenderer({canvas: document.getElementById('htmlCanvas') as HTMLCanvasElement, antialias: true});
   renderer.setAnimationLoop( render );
@@ -90,6 +92,7 @@ function init() {
   window.addEventListener("resize", onWindowResize);
   window.addEventListener("pointerdown", onPointerDown);
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
 
   onWindowResize();
 
@@ -103,7 +106,6 @@ function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
 }
 
 function onCameraMoved() {
-  rightClickCancelled = true;
   if (contextMenuOpen) renderUI(false);
   viewportGizmo.update();
   returnFocus();
@@ -125,7 +127,7 @@ function onMessageReceived(event: MessageEvent<WebviewTargetMessage>) {
   } else if (data.type == "DOCUMENT_CLOSED") {
     handleDocumentClosed(data);
   } else if (data.type == "PUSH_SETTINGS") {
-    handlePushSettings(data);
+    onUpdateSettings(data.settings, false);
   }
   console.log("Message End: " + window.performance.now());
 }
@@ -213,31 +215,54 @@ function handleDocumentClosed(data: DocumentClosed) {
   texture.dispose();
 }
 
-
-function handlePushSettings(data: PushSettings) {
-  userSettings = data.settings;
-  
-  
-  // Display Settings
-  camera.fov = userSettings.displaySettings.cameraFOV;
-  
-  // TODO: Controls
-
-
-  // Grid Settings
-  updateGrid();
-
-
-  // Push settings value update to UI for menus
-  renderUI(false);
-}
-
 //#endregion
 
 //#region Input Event Handlers
 
+
+function updateOrbitControls() {
+  let scheme: ControlScheme;
+
+  if (userSettings.controlsSettings.scheme != ControlSchemeType.CUSTOM) {
+    scheme = BuiltInSchemes.get(userSettings.controlsSettings.scheme)!;
+  } else {
+    scheme = userSettings.controlsSettings.customScheme!;
+  }
+
+  controls.mouseButtons.LEFT = controls.mouseButtons.MIDDLE = controls.mouseButtons.RIGHT = null;
+
+  const assignToCameraControl = function(inputCombo: InputCombination,  cameraControl: THREE.MOUSE) {
+    if (inputCombo.key && !pressedKeys[inputCombo.key]) return;
+
+    switch (inputCombo.mouseButton) {
+      case MouseButton.LEFT:
+        controls.mouseButtons.LEFT = cameraControl;
+        break;
+       case MouseButton.MIDDLE:
+        controls.mouseButtons.MIDDLE = cameraControl;
+        break;
+      case MouseButton.RIGHT:
+        controls.mouseButtons.RIGHT = cameraControl;
+        break;
+    }
+  }
+
+  if (scheme.pan) assignToCameraControl(scheme.pan, THREE.MOUSE.PAN);
+  if (scheme.rotate) assignToCameraControl(scheme.rotate, THREE.MOUSE.ROTATE);
+  if (scheme.zoom) assignToCameraControl(scheme.zoom, THREE.MOUSE.DOLLY);
+}
+
 function onKeyDown(event: KeyboardEvent) {
   console.log(event.key);
+  pressedKeys[event.key] = true;
+  updateOrbitControls();
+}
+
+
+function onKeyUp(event: KeyboardEvent) {
+  console.log(event.key);
+  pressedKeys[event.key] = false;
+  updateOrbitControls();
 }
 
 function onWindowResize() {
@@ -247,46 +272,69 @@ function onWindowResize() {
   viewportGizmo.update();
 }
 
-function onPointerDown(event: PointerEvent) {
-  if (rightClickCancelled) {
-    rightClickCancelled = false;
-    return;
+function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
+  let pointer = new THREE.Vector2();
+  pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+  pointer.y = - (event.clientY / window.innerHeight ) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  let intersects = raycaster.intersectObjects( scene.children );
+  
+  if (intersects.length == 0) return null;
+
+  let minDistance = Number.MAX_SAFE_INTEGER;
+  let minIndex = -1;
+
+
+  for ( let i = 0; i < intersects.length; i ++ ) {
+    let obj = intersects[i].object;
+    if (obj instanceof THREE.Line) continue;
+    if (obj == outlineMesh) continue;
+    if (intersects[i].distance < minDistance) {
+      minDistance = intersects[i].distance;
+      minIndex = i;
+    }
   }
 
-  rightClickCancelled = false;
+
+  if (minIndex < 0) return null;
+
+  return intersects[minIndex].object;
+}
+
+function selectObject(object: THREE.Object3D | null) {
+  if (currentlySelectedObject == object) return;
+
+  if (currentlySelectedObject != null) {
+    scene.remove(outlineMesh!);
+  }
+
+  currentlySelectedObject = object;
+  if (currentlySelectedObject != null) {
+    if (object instanceof THREE.Mesh) {
+      let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
+
+      outlineMesh = new THREE.Mesh(object.geometry, material);
+      outlineMesh.position.set(object.position.x, object.position.y, object.position.z);
+      outlineMesh.scale.multiplyScalar(1.05);
+
+      scene.add(outlineMesh);
+    }
+  }
+}
+
+
+function onPointerDown(event: PointerEvent) {
+  console.log(event);
 
   if (contextMenuOpen) {
     renderUI(false);
   }
 
-  if (event.button == 2) {
-    let pointer = new THREE.Vector2();
-    pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-    pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObjects( scene.children );
-
-    
-    if (intersects.length == 0) return;
-
-    
-    let minDistance = Number.MAX_SAFE_INTEGER;
-    let minIndex = -1;
-
-
-    for ( let i = 0; i < intersects.length; i ++ ) {
-      if (intersects[i].object instanceof THREE.GridHelper) continue;
-      if (intersects[i].distance < minDistance) {
-        minDistance = intersects[i].distance;
-        minIndex = i;
-      }      
-    }
-
-
-    if (minIndex < 0) return;
-
-
-    currentlySelectedObject = intersects[minIndex].object;
+  let obj = getObjectAtCursor(event);
+  
+  if (event.button == 0 && controls.mouseButtons.LEFT == null) {
+    selectObject(obj);
+  } else if (event.button == 2 && controls.mouseButtons.RIGHT == null) {
     renderUI(true, new THREE.Vector2(event.clientX, event.clientY));
   }
 }
@@ -299,8 +347,8 @@ function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector
   if (!userSettings) return;
 
   root.render(React.createElement(App, {
-    initialUserSettings: userSettings, 
-    onUpdateGridSettings: onUpdateGridSettings, 
+    userSettings: userSettings, 
+    onUpdateSettings: onUpdateSettings, 
     onModelLoad: onLoadButtonClicked,
     contextMenuOpen: contextMenuVisible,
     contextMenuPosition: contextMenuPosition,
@@ -348,12 +396,28 @@ function onContextMenuChoiceMade(key: choiceStrings) {
   renderUI(false, new THREE.Vector2(0, 0)); // Close the context menu
 }
 
-function onUpdateGridSettings(newSettings: GridSettings) {
-  userSettings = {...userSettings, gridSettings: newSettings}
+function onUpdateSettings(newSettings: UserSettings, updatePlugin: boolean = true) {
+  userSettings = newSettings;
+  
+  // Display Settings
+  camera.fov = userSettings.displaySettings.cameraFOV;
+  camera.updateProjectionMatrix();
 
+
+  // TODO: Controls
+  updateOrbitControls();
+
+  // Grid Settings
   updateGrid();
-  postPluginMessage({type: "UpdateSettings", settings: userSettings});
+
+  // Push settings value update to UI for menus
+  renderUI(false);
+
   returnFocus();
+
+  if (updatePlugin) {
+    postPluginMessage({type: "UpdateSettings", settings: userSettings});
+  }
 }
 
 //#endregion
