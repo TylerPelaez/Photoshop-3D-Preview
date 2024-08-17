@@ -63,6 +63,10 @@ let outlineObject: THREE.Object3D | null;
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
 
+
+let lightingMode: "Unlit" | "Lit" = "Unlit"; 
+
+
 init();
 
 function init() {
@@ -197,17 +201,7 @@ function handleUpdate(data: PartialUpdate) {
 
 
 function handleDocumentClosed(data: DocumentClosed) {
-  if (!documentIDsToTextures.has(data.documentID)) return;
-    
-  let texture = documentIDsToTextures.get(data.documentID)!;
-  let material = textureUUIDsToMaterials.get(texture.uuid)!;
-  materialUUIDsToMeshes.get(material?.uuid)?.forEach((mesh: THREE.Mesh, id: number) => {
-    mesh.material = new THREE.MeshBasicMaterial();
-  });
-  materialUUIDsToMeshes.delete(material.uuid);
-  textureUUIDsToMaterials.delete(texture.uuid);
   documentIDsToTextures.delete(data.documentID);
-  texture.dispose();
 }
 
 //#endregion
@@ -438,7 +432,15 @@ async function onLoadButtonClicked(){
 
 function loadObject(objectFileURL: string, objectFileName: string) {
   if (currentObject) {
-      scene.remove(currentObject);
+    currentObject.traverse(obj => {
+      if (obj instanceof THREE.Mesh) {
+        
+      }
+    })
+    
+    scene.remove(currentObject);
+
+
   }
   selectObject(null);
 
