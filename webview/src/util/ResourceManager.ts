@@ -34,6 +34,7 @@ interface TexturedMaterial extends Material {
   transmissionMap?: Texture;
 }
 
+// For tracking objects, primarily to facilitate disposing of them once they are no longer used.
 export default class ResourceManager{
   scene: Scene;
   objects = new Map<string, Object3D>();
