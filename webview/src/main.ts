@@ -17,6 +17,7 @@ import { DocumentClosed, PartialUpdate, PluginTargetMessage, WebviewTargetMessag
 import App from './components/App';
 import { choiceStrings } from './components/ContextMenu.tsx';
 import './output.css';
+import ResourceManager from './util/ResourceManager.ts';
 
 // The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
 declare global {
@@ -45,10 +46,7 @@ let currentObject : THREE.Object3D;
 let controls : OrbitControls;
 let grid: THREE.GridHelper;
 
-
-let documentIDsToTextures = new Map<number, THREE.DataTexture>();
-let textureUUIDsToMaterials = new Map<string, THREE.MeshBasicMaterial>();
-let materialUUIDsToMeshes = new Map<string, Map<number, THREE.Mesh>>();
+let resourceManager: ResourceManager;
 let activeDocument: number;
 
 let userSettings: UserSettings;
@@ -63,6 +61,8 @@ let outlineObject: THREE.Object3D | null;
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
 
+let lightTarget: THREE.Object3D;
+let light: THREE.DirectionalLight;
 
 let lightingMode: "Unlit" | "Lit" = "Unlit"; 
 
@@ -91,6 +91,18 @@ function init() {
 
   viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
   viewportGizmo.target = controls.target;
+
+  light = new THREE.DirectionalLight();
+  lightTarget = new THREE.Object3D();
+
+  scene.add(light);
+  scene.add(lightTarget);
+
+  light.position.set(-10,10,-10);
+  light.target = lightTarget;
+
+
+  resourceManager = new ResourceManager(scene);
 
   window.addEventListener("message", onMessageReceived);
   window.addEventListener("resize", onWindowResize);
@@ -138,27 +150,16 @@ function handleUpdate(data: PartialUpdate) {
   let height = data.height;  
   let documentID = data.documentID;
 
-  let texture: THREE.DataTexture;
   let pixelData: Uint8Array;
 
   let pixelDataLength = 4 * width * height;
   let pixelStringStartIndex = data.pixelBatchOffset * 4;
   let pixelStringEndIndex = pixelStringStartIndex + data.pixelBatchSize * 4;
 
-  let updateMaterial: THREE.MeshBasicMaterial | undefined;
 
-  if (documentIDsToTextures.has(documentID)) {
-    let oldTexture = documentIDsToTextures.get(documentID)!;
-    if (oldTexture.image.width != width || oldTexture.image.height != height) {
-      updateMaterial = textureUUIDsToMaterials.get(oldTexture.uuid);
-      textureUUIDsToMaterials.delete(oldTexture.uuid);
-      documentIDsToTextures.delete(documentID);
-      oldTexture?.dispose();
-    }
-  }
+  let texture = resourceManager.getTextureForDocumentId(documentID);
 
-
-  if (!documentIDsToTextures.has(documentID)) {
+  if (!texture || texture.image.width != width || texture.image.height != height) {
     pixelData = new Uint8Array(pixelDataLength);
 
     for (let i = 0; i < pixelStringStartIndex; i++) {
@@ -178,17 +179,8 @@ function handleUpdate(data: PartialUpdate) {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = texture.minFilter = THREE.LinearFilter;
     
-    documentIDsToTextures.set(documentID, texture);
-
-    if (updateMaterial) {
-      updateMaterial.map = texture;
-      textureUUIDsToMaterials.set(texture.uuid, updateMaterial);
-    } else {
-      let material = new THREE.MeshBasicMaterial({map: texture}); 
-      textureUUIDsToMaterials.set(texture.uuid, material);
-    }
+    resourceManager.setDocumentTexture(documentID, texture);
   } else {
-    texture = documentIDsToTextures.get(documentID)!;
     pixelData = texture.image.data as Uint8Array;
 
     for (let i = 0; i < data.pixelString.length; i++) {
@@ -196,12 +188,13 @@ function handleUpdate(data: PartialUpdate) {
     }
   }
 
+
   texture.needsUpdate = true;
 }
 
 
 function handleDocumentClosed(data: DocumentClosed) {
-  documentIDsToTextures.delete(data.documentID);
+  resourceManager.removeDocument(data.documentID);
 }
 
 //#endregion
@@ -372,20 +365,12 @@ function onContextMenuChoiceMade(key: choiceStrings) {
     .start();
   } else if (key == "APPLY") {
     if (currentlySelectedObject instanceof THREE.Mesh) {
-      let texture = documentIDsToTextures.get(activeDocument);
+      let texture = resourceManager.getTextureForDocumentId(activeDocument);
       if (texture) {
-        let materialUUID = currentlySelectedObject.material.uuid;
-        if (materialUUIDsToMeshes.has(materialUUID)) {
-          let data = materialUUIDsToMeshes.get(materialUUID)!;
-          data.delete(currentlySelectedObject.id);
-        }
+        let newMaterial = new THREE.MeshBasicMaterial({map: texture});
+        resourceManager.addMaterialTexture(texture, newMaterial);
 
-        currentlySelectedObject.material = textureUUIDsToMaterials.get(texture.uuid);
-        materialUUID = currentlySelectedObject.material.uuid;
-        if (!materialUUIDsToMeshes.has(materialUUID)) {
-          materialUUIDsToMeshes.set(materialUUID, new Map<number, THREE.Mesh>());
-        }
-        materialUUIDsToMeshes.get(materialUUID)!.set(currentObject.id, currentlySelectedObject);
+        resourceManager.setMeshMaterial(currentlySelectedObject, newMaterial);
       }
     }
   }
@@ -432,15 +417,7 @@ async function onLoadButtonClicked(){
 
 function loadObject(objectFileURL: string, objectFileName: string) {
   if (currentObject) {
-    currentObject.traverse(obj => {
-      if (obj instanceof THREE.Mesh) {
-        
-      }
-    })
-    
-    scene.remove(currentObject);
-
-
+    resourceManager.removeObjectFromScene(currentObject.uuid);
   }
   selectObject(null);
 
@@ -459,14 +436,8 @@ function loadObject(objectFileURL: string, objectFileName: string) {
       currentObject = obj.scene;
     }
 
-    // Assign everything to the current material
-    // currentObject.traverse(child => {
-    //   if (child instanceof THREE.Mesh) {
-    //     child.material = new THREE.MeshBasicMaterial();
-    //   }
-    // });
-
-    scene.add(currentObject);
+    console.log(currentObject);
+    resourceManager.addObjectToScene(currentObject);
 
     URL.revokeObjectURL(objectFileURL);
   }, undefined, function(error) {

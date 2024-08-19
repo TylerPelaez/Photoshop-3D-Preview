@@ -239,6 +239,10 @@ export default class ResourceManager{
   setDocumentTexture(documentID: number, newTexture: Texture): void {
     const currentTextureUUID = this.documentIdsToTextureUUID.get(documentID);
     
+    if (currentTextureUUID == newTexture.uuid) {
+      return;
+    }
+    
     this.documentIdsToTextureUUID.set(documentID, newTexture.uuid);
     this.textures.set(newTexture.uuid, newTexture);
 
@@ -252,6 +256,8 @@ export default class ResourceManager{
       const currentTexture = this.textures.get(currentTextureUUID);
       currentTexture?.dispose();
       this.textures.delete(currentTextureUUID);
+    } else {
+
     }
   }
 
