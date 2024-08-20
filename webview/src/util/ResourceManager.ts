@@ -1,49 +1,56 @@
 import { Mesh, MeshBasicMaterial, MeshStandardMaterial, MeshLambertMaterial, MeshPhongMaterial, BufferGeometry, Scene, Object3D, Texture, Material } from "three";
 
+let useLit = true;
+
 interface TexturedMaterial extends Material {
   // Basic Material
-  map?: Texture;
-  alphaMap?: Texture;
-  aoMap?: Texture;
-  envMap?: Texture;
-  lightMap?: Texture;
-  specularMap?: Texture;
+  map?: Texture | null;
+  alphaMap?: Texture | null;
+  aoMap?: Texture | null;
+  envMap?: Texture | null;
+  lightMap?: Texture | null;
+  specularMap?: Texture | null;
 
   // Lambert + Phong
-  displacementMap?: Texture;
-  emissiveMap?: Texture;
-  bumpMap?: Texture;
-  normalMap?: Texture;
+  displacementMap?: Texture | null;
+  emissiveMap?: Texture | null;
+  bumpMap?: Texture | null;
+  normalMap?: Texture | null;
 
   // Standard
-  metalnessMap?: Texture;
+  metalnessMap?: Texture | null;
 
   // PBR
-  anisotropyMap?: Texture;
-  clearcoatMap?: Texture;
-  clearcoatNormalMap?: Texture;
-  clearcoatRoughnessMap?: Texture;
-  iridescenceMap?: Texture;
-  iridescenceThicknessMap?: Texture;
-  sheenRoughnessMap?: Texture;
-  sheenColorMap?: Texture;
+  anisotropyMap?: Texture | null;
+  clearcoatMap?: Texture | null;
+  clearcoatNormalMap?: Texture | null;
+  clearcoatRoughnessMap?: Texture | null;
+  iridescenceMap?: Texture | null;
+  iridescenceThicknessMap?: Texture | null;
+  sheenRoughnessMap?: Texture | null;
+  sheenColorMap?: Texture | null;
 
-  specularIntensityMap?: Texture;
-  specularColorMap?: Texture;
-  thicknessMap?: Texture;
-  transmissionMap?: Texture;
+  specularIntensityMap?: Texture | null;
+  specularColorMap?: Texture | null;
+  thicknessMap?: Texture | null;
+  transmissionMap?: Texture | null;
 }
 
+interface MaterialProxy {
+  uuid: string,
+  litMaterial: TexturedMaterial,
+  unlitMaterial: MeshBasicMaterial,
+  dispose(): void,
+  m(): TexturedMaterial,
+}
 
 // For tracking objects, primarily to facilitate disposing of them once they are no longer used.
 export default class ResourceManager{
   scene: Scene;
   objects = new Map<string, Object3D>();
   textures = new Map<string, Texture>();
-  materials = new Map<string, Material>();
+  materials = new Map<string, MaterialProxy>();
   geometries = new Map<string, BufferGeometry>();
-
-  unlitToLitMaterials = new Map<string, string>();
 
   documentIdsToTextureUUID = new Map<number, string>();
   textureUUIDsToMaterialUUIDs = new Map<string, Set<string>>();
@@ -51,19 +58,21 @@ export default class ResourceManager{
   geometryUUIDsToMeshUUIDs = new Map<string, Set<string>>();
   materialUUIDsToMeshUUIDs = new Map<string, Set<string>> ();
 
-  defaultMaterial = new MeshBasicMaterial({color: 0xFFFFFF});
+  unlitToLitUUIDs = new Map<string, string>();
 
-  lightingMode: "Lit" | "Unlit" = "Lit";
+  defaultMaterial: MaterialProxy;
 
   constructor(scene: Scene) {
     this.scene = scene;
+    this.defaultMaterial = this.createMaterialProxy(new MeshStandardMaterial({color: 0xFFFFFF}));
+
     this.materials.set(this.defaultMaterial.uuid, this.defaultMaterial);
     this.materialUUIDsToMeshUUIDs.set(this.defaultMaterial.uuid, new Set());
   }
 
 
 //#region  Getters 
-  getMaterialsUsingTexture(uuid: string): Material[] {
+  getMaterialsUsingTexture(uuid: string): MaterialProxy[] {
     let materialUUIDS = this.textureUUIDsToMaterialUUIDs.get(uuid);
     if (!materialUUIDS) return [];
     
@@ -87,7 +96,9 @@ export default class ResourceManager{
     if (!material) return [];
 
     const textures: Texture[] = [];
-    const texturedMaterial = material as TexturedMaterial;
+
+    // To ensure we don't miss textures, return the base, lit material.
+    const texturedMaterial = material.litMaterial as TexturedMaterial;
 
     if (texturedMaterial.map) textures.push(texturedMaterial.map);
     if (texturedMaterial.alphaMap) textures.push(texturedMaterial.alphaMap);
@@ -116,25 +127,100 @@ export default class ResourceManager{
     return textures;
   }
 
-  getMaterialsUsedByMesh(uuid: string): Material[] {
+  getMaterialsUsedByMesh(uuid: string): MaterialProxy[] {
     const materialUUIDs = this.materialUUIDsToMeshUUIDs.get(uuid);
     if (!materialUUIDs) return [];
 
     return Array.from(materialUUIDs).map(materialUUID => this.materials.get(materialUUID)).filter(val => val != undefined);
   }
 
+  getMaterialByUUID(uuid: string): MaterialProxy | null {
+    let proxyUUID = this.unlitToLitUUIDs.get(uuid);
+    if (proxyUUID) {
+      return this.materials.get(proxyUUID) ?? null;
+    }
+
+    return this.materials.get(uuid) ?? null;
+  }
+
 //#endregion
 
 
 //#region Adding To Scene
+  toggleLightingMode() {
+    useLit = !useLit;
 
-  addMaterialTexture(texture: Texture, material: Material) {
+    this.materialUUIDsToMeshUUIDs.forEach((meshes, materialUUID) => {
+      let materialProxy = this.materials.get(materialUUID);
+      if (!materialProxy) {
+        return;
+      }
+
+      meshes.forEach(meshUUID => {
+        let mesh = this.objects.get(meshUUID);
+        if (mesh instanceof Mesh) {
+          let currentMaterial = mesh.material as Material | Material[];
+          if (currentMaterial instanceof Material) {
+            mesh.material = materialProxy.m();
+          } else {
+            let oldUUID = useLit ? materialProxy.unlitMaterial.uuid : materialProxy.litMaterial.uuid;
+            for (let i = 0; i < currentMaterial.length; i++) {
+              if (currentMaterial[i].uuid == oldUUID) {
+                mesh.material[i] = materialProxy.m();
+              }
+            }
+          }
+        }
+      })
+    });
+
+  }
+
+  createMaterialProxy(material: Material): MaterialProxy {
+    const unlitMaterial = new MeshBasicMaterial();
+    if (material instanceof MeshBasicMaterial || material instanceof MeshStandardMaterial || material instanceof MeshPhongMaterial || material instanceof MeshLambertMaterial) {
+      unlitMaterial.color = material.color;
+      unlitMaterial.fog = material.fog;
+      unlitMaterial.envMapRotation = material.envMapRotation;
+
+
+      unlitMaterial.map = material?.map ?? null;
+      unlitMaterial.alphaMap = material?.alphaMap ?? null
+      unlitMaterial.aoMap = material?.aoMap ?? null;
+      unlitMaterial.envMap = material?.envMap ?? null;
+      unlitMaterial.lightMap = material?.lightMap ?? null;
+
+      if (!(material instanceof MeshStandardMaterial)) {
+        unlitMaterial.specularMap = material?.specularMap ?? null;
+      }
+    }
+
+    const materialProxy: MaterialProxy = {
+      uuid: material.uuid,
+      unlitMaterial: unlitMaterial,
+      litMaterial: material,
+      m() {
+        if (useLit) return this.litMaterial;
+        return this.unlitMaterial; 
+      },
+      dispose() {
+        this.litMaterial.dispose();
+        this.unlitMaterial.dispose();
+      }
+    }
+
+    this.unlitToLitUUIDs.set(unlitMaterial.uuid, materialProxy.uuid);
+
+    return materialProxy;
+  }
+
+  addMaterialTexture(texture: Texture, materialUUID: string) {
     this.textures.set(texture.uuid, texture);
 
     if (!this.textureUUIDsToMaterialUUIDs.has(texture.uuid)) 
       this.textureUUIDsToMaterialUUIDs.set(texture.uuid, new Set());
 
-    this.textureUUIDsToMaterialUUIDs.get(texture.uuid)!.add(material.uuid);
+    this.textureUUIDsToMaterialUUIDs.get(texture.uuid)!.add(materialUUID);
   }
 
 
@@ -145,10 +231,6 @@ export default class ResourceManager{
     }
 
     this.scene.add(obj);
-
-
-    let materialsToMakeUnlit: string[] = [];
-
 
     obj.traverse((instance) => {
       this.objects.set(instance.uuid, instance);
@@ -164,82 +246,90 @@ export default class ResourceManager{
 
 
         let instanceMaterials: Material | Material[] = instance.material;
-        if (instanceMaterials instanceof Material) 
+        let hasMultipleMaterials = true;
+
+        if (instanceMaterials instanceof Material) {
+          hasMultipleMaterials = false;
           instanceMaterials = [instanceMaterials];
+        } 
 
         for (let i = 0; i < instanceMaterials.length; i++) {
           let material = instanceMaterials[i];
           if (!(material instanceof MeshBasicMaterial || material instanceof MeshLambertMaterial || 
-                material instanceof MeshPhongMaterial || material instanceof MeshStandardMaterial)) {
-            console.error("Unsupported Material Type -- will be replaced with DEFAULT Material");
-            if (instance.material instanceof Material) {
-              instance.material = this.defaultMaterial;
-            } else {
-              instance.material[i] = this.defaultMaterial;
-            }
-            
-            
+            material instanceof MeshPhongMaterial || material instanceof MeshStandardMaterial)) {
+              console.error("Unsupported Material Type -- will be replaced with DEFAULT Material");
+              if (hasMultipleMaterials) {
+                instance.material[i] = this.defaultMaterial.m();
+              } else {
+                instance.material = this.defaultMaterial.m();
+              }
 
-            this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)!.add(instance.uuid);
-            continue;
+              this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)!.add(instance.uuid);
+              continue;
           }
 
-          if (this.lightingMode === "Unlit" && !(material instanceof MeshBasicMaterial)) {
-            materialsToMakeUnlit.push(material.uuid);
-          }
 
+          let proxy = this.createMaterialProxy(material);
+
+          // Apply lighting mode
+          if (hasMultipleMaterials) {
+            instance.material[i] = proxy.m();
+          } else {
+            instance.material = proxy.m();
+          }
 
           // Add material
-          this.materials.set(material.uuid, material);
+          this.materials.set(proxy.uuid, proxy);
 
-          if (!this.materialUUIDsToMeshUUIDs.has(material.uuid))
-            this.materialUUIDsToMeshUUIDs.set(material.uuid, new Set());
+          if (!this.materialUUIDsToMeshUUIDs.has(proxy.uuid))
+            this.materialUUIDsToMeshUUIDs.set(proxy.uuid, new Set());
 
-          this.materialUUIDsToMeshUUIDs.get(material.uuid)!.add(instance.uuid);
+          this.materialUUIDsToMeshUUIDs.get(proxy.uuid)!.add(instance.uuid);
 
           // Add all supported textures
 
           let texturedMaterial = material as TexturedMaterial;
 
       
-          if (texturedMaterial.map) this.addMaterialTexture(texturedMaterial.map, texturedMaterial);
-          if (texturedMaterial.alphaMap) this.addMaterialTexture(texturedMaterial.alphaMap, texturedMaterial);
-          if (texturedMaterial.aoMap) this.addMaterialTexture(texturedMaterial.aoMap, texturedMaterial);
-          if (texturedMaterial.envMap) this.addMaterialTexture(texturedMaterial.envMap, texturedMaterial);
-          if (texturedMaterial.lightMap) this.addMaterialTexture(texturedMaterial.lightMap, texturedMaterial);
-          if (texturedMaterial.specularMap) this.addMaterialTexture(texturedMaterial.specularMap, texturedMaterial);
-          if (texturedMaterial.displacementMap) this.addMaterialTexture(texturedMaterial.displacementMap, texturedMaterial);
-          if (texturedMaterial.emissiveMap) this.addMaterialTexture(texturedMaterial.emissiveMap, texturedMaterial);
-          if (texturedMaterial.bumpMap) this.addMaterialTexture(texturedMaterial.bumpMap, texturedMaterial);
-          if (texturedMaterial.normalMap) this.addMaterialTexture(texturedMaterial.normalMap, texturedMaterial);
-          if (texturedMaterial.metalnessMap) this.addMaterialTexture(texturedMaterial.metalnessMap, texturedMaterial);
-          if (texturedMaterial.anisotropyMap) this.addMaterialTexture(texturedMaterial.anisotropyMap, texturedMaterial);
-          if (texturedMaterial.clearcoatMap) this.addMaterialTexture(texturedMaterial.clearcoatMap, texturedMaterial);
-          if (texturedMaterial.clearcoatNormalMap) this.addMaterialTexture(texturedMaterial.clearcoatNormalMap, texturedMaterial);
-          if (texturedMaterial.clearcoatRoughnessMap) this.addMaterialTexture(texturedMaterial.clearcoatRoughnessMap, texturedMaterial);
-          if (texturedMaterial.iridescenceMap) this.addMaterialTexture(texturedMaterial.iridescenceMap, texturedMaterial);
-          if (texturedMaterial.iridescenceThicknessMap) this.addMaterialTexture(texturedMaterial.iridescenceThicknessMap, texturedMaterial);
-          if (texturedMaterial.sheenRoughnessMap) this.addMaterialTexture(texturedMaterial.sheenRoughnessMap, texturedMaterial);
-          if (texturedMaterial.sheenColorMap) this.addMaterialTexture(texturedMaterial.sheenColorMap, texturedMaterial);
-          if (texturedMaterial.specularIntensityMap) this.addMaterialTexture(texturedMaterial.specularIntensityMap, texturedMaterial);
-          if (texturedMaterial.specularColorMap) this.addMaterialTexture(texturedMaterial.specularColorMap, texturedMaterial);
-          if (texturedMaterial.thicknessMap) this.addMaterialTexture(texturedMaterial.thicknessMap, texturedMaterial);
-          if (texturedMaterial.transmissionMap) this.addMaterialTexture(texturedMaterial.transmissionMap, texturedMaterial);
+          if (texturedMaterial.map) this.addMaterialTexture(texturedMaterial.map, proxy.uuid);
+          if (texturedMaterial.alphaMap) this.addMaterialTexture(texturedMaterial.alphaMap, proxy.uuid);
+          if (texturedMaterial.aoMap) this.addMaterialTexture(texturedMaterial.aoMap, proxy.uuid);
+          if (texturedMaterial.envMap) this.addMaterialTexture(texturedMaterial.envMap, proxy.uuid);
+          if (texturedMaterial.lightMap) this.addMaterialTexture(texturedMaterial.lightMap, proxy.uuid);
+          if (texturedMaterial.specularMap) this.addMaterialTexture(texturedMaterial.specularMap, proxy.uuid);
+          if (texturedMaterial.displacementMap) this.addMaterialTexture(texturedMaterial.displacementMap, proxy.uuid);
+          if (texturedMaterial.emissiveMap) this.addMaterialTexture(texturedMaterial.emissiveMap, proxy.uuid);
+          if (texturedMaterial.bumpMap) this.addMaterialTexture(texturedMaterial.bumpMap, proxy.uuid);
+          if (texturedMaterial.normalMap) this.addMaterialTexture(texturedMaterial.normalMap, proxy.uuid);
+          if (texturedMaterial.metalnessMap) this.addMaterialTexture(texturedMaterial.metalnessMap, proxy.uuid);
+          if (texturedMaterial.anisotropyMap) this.addMaterialTexture(texturedMaterial.anisotropyMap, proxy.uuid);
+          if (texturedMaterial.clearcoatMap) this.addMaterialTexture(texturedMaterial.clearcoatMap, proxy.uuid);
+          if (texturedMaterial.clearcoatNormalMap) this.addMaterialTexture(texturedMaterial.clearcoatNormalMap, proxy.uuid);
+          if (texturedMaterial.clearcoatRoughnessMap) this.addMaterialTexture(texturedMaterial.clearcoatRoughnessMap, proxy.uuid);
+          if (texturedMaterial.iridescenceMap) this.addMaterialTexture(texturedMaterial.iridescenceMap, proxy.uuid);
+          if (texturedMaterial.iridescenceThicknessMap) this.addMaterialTexture(texturedMaterial.iridescenceThicknessMap, proxy.uuid);
+          if (texturedMaterial.sheenRoughnessMap) this.addMaterialTexture(texturedMaterial.sheenRoughnessMap, proxy.uuid);
+          if (texturedMaterial.sheenColorMap) this.addMaterialTexture(texturedMaterial.sheenColorMap, proxy.uuid);
+          if (texturedMaterial.specularIntensityMap) this.addMaterialTexture(texturedMaterial.specularIntensityMap, proxy.uuid);
+          if (texturedMaterial.specularColorMap) this.addMaterialTexture(texturedMaterial.specularColorMap, proxy.uuid);
+          if (texturedMaterial.thicknessMap) this.addMaterialTexture(texturedMaterial.thicknessMap, proxy.uuid);
+          if (texturedMaterial.transmissionMap) this.addMaterialTexture(texturedMaterial.transmissionMap, proxy.uuid);
         
         }
       }
     });
-
-    materialsToMakeUnlit.forEach(uuid => this.createUnlitMaterialForLitMaterial(uuid));
   }
 
 
-  setMeshMaterial(mesh: Mesh, material: Material) {
+  setMeshMaterial(mesh: Mesh, material: MaterialProxy) {
     let currentMaterials = mesh.material instanceof Material ? [mesh.material] : mesh.material;
     for (let currentMaterial of currentMaterials) {
-      this.materialUUIDsToMeshUUIDs.get(currentMaterial.uuid)?.delete(mesh.uuid);
-      if (!this.materialUUIDsToMeshUUIDs.get(currentMaterial.uuid)?.size) {
-        this.removeMaterial(currentMaterial.uuid);
+      let proxy = this.getMaterialByUUID(currentMaterial.uuid);
+      if (proxy) {
+        this.materialUUIDsToMeshUUIDs.get(proxy.uuid)?.delete(mesh.uuid);
+        if (!this.materialUUIDsToMeshUUIDs.get(proxy.uuid)?.size) {
+          this.removeMaterial(proxy.uuid);
+        }
       }
     }
     
@@ -250,7 +340,7 @@ export default class ResourceManager{
 
     this.materials.set(material.uuid, material);
 
-    mesh.material = material;
+    mesh.material = material.m();
   }
 
   setDocumentTexture(documentID: number, newTexture: Texture): void {
@@ -267,21 +357,19 @@ export default class ResourceManager{
     if (currentTextureUUID) {
       let affectedMaterials = this.getMaterialsUsingTexture(currentTextureUUID);
       for (let material of affectedMaterials) {
-        this.replaceMaterialTexture(material, currentTextureUUID, newTexture);
+        this.addMaterialTexture(newTexture, material.uuid);
+        this.textureUUIDsToMaterialUUIDs.get(currentTextureUUID)?.delete(material.uuid);
+        this.replaceMaterialTexture(material.litMaterial, currentTextureUUID, newTexture);
+        this.replaceMaterialTexture(material.unlitMaterial, currentTextureUUID, newTexture);
       }
 
       const currentTexture = this.textures.get(currentTextureUUID);
       currentTexture?.dispose();
       this.textures.delete(currentTextureUUID);
-    } else {
-
     }
   }
 
   replaceMaterialTexture(texturedMaterial: TexturedMaterial, oldTextureUUID: string, newTexture: Texture) {
-    this.addMaterialTexture(newTexture, texturedMaterial);
-    this.textureUUIDsToMaterialUUIDs.get(oldTextureUUID)?.delete(texturedMaterial.uuid);
-
     // Replace old textures with the new texture
     if (texturedMaterial.map?.uuid === oldTextureUUID) texturedMaterial.map = newTexture;
     if (texturedMaterial.alphaMap?.uuid === oldTextureUUID) texturedMaterial.alphaMap = newTexture;
@@ -309,104 +397,15 @@ export default class ResourceManager{
   }
 
 
-  swapToLitMaterials() {
-    this.lightingMode = "Lit";
-    let unlitMaterials = Array.from(this.unlitToLitMaterials.keys());
-
-    unlitMaterials.forEach(unlitUUID => {
-      let litUUID = this.unlitToLitMaterials.get(unlitUUID);
-      let litMat = this.materials.get(litUUID!);
-      let unlitMat = this.materials.get(unlitUUID);
-
-
-      let meshes = this.materialUUIDsToMeshUUIDs.get(unlitUUID);
-      if (meshes) {
-        meshes.forEach(meshUUID => {
-          let mesh = this.objects.get(meshUUID);
-          if (mesh instanceof Mesh) {
-            mesh.material = litMat;
-          }
-        });
-
-        this.materialUUIDsToMeshUUIDs.delete(unlitUUID);
-      }
-
-      let textures = this.getTexturesUsedByMaterial(unlitUUID);
-      textures.forEach(tex => {
-        this.textureUUIDsToMaterialUUIDs.get(tex.uuid)?.delete(unlitUUID);
-      })
-      
-
-      this.unlitToLitMaterials.delete(unlitUUID);
-      this.materials.delete(unlitUUID);
-      unlitMat?.dispose();
-    });
-  }
-
-  createUnlitMaterialForLitMaterial(materialUUID: string) {
-    let meshes = Array.from(this.materialUUIDsToMeshUUIDs.get(materialUUID) ?? []);
-
-    let litMat = this.materials.get(materialUUID) as TexturedMaterial;
-    let unlitMat = new MeshBasicMaterial();
-
-    if (litMat instanceof MeshBasicMaterial || litMat instanceof MeshStandardMaterial || litMat instanceof MeshPhongMaterial || litMat instanceof MeshLambertMaterial) {
-      unlitMat.color = litMat.color;
-      unlitMat.fog = litMat.fog;
-      unlitMat.envMapRotation = litMat.envMapRotation;
-    }
-    unlitMat.map = litMat?.map ?? null;
-    unlitMat.alphaMap = litMat?.alphaMap ?? null
-    unlitMat.aoMap = litMat?.aoMap ?? null;
-    unlitMat.envMap = litMat?.envMap ?? null;
-    unlitMat.lightMap = litMat?.lightMap ?? null;
-    unlitMat.specularMap = litMat?.specularMap ?? null;
-
-
-    this.unlitToLitMaterials.set(unlitMat.uuid, materialUUID);
-    this.materials.set(unlitMat.uuid, unlitMat);
-
-    let textures = this.getTexturesUsedByMaterial(materialUUID);
-    textures.forEach(tex => {
-      this.textureUUIDsToMaterialUUIDs.get(tex.uuid)?.add(unlitMat.uuid);
-    });
-
-    this.materialUUIDsToMeshUUIDs.set(unlitMat.uuid, new Set());
-
-    meshes.forEach((meshUUID) => {
-      let mesh = this.objects.get(meshUUID);
-      if (mesh instanceof Mesh) {
-        mesh.material = unlitMat;
-      }
-      this.materialUUIDsToMeshUUIDs.get(unlitMat.uuid)?.add(meshUUID);
-    });
-  }
-
-  swapToUnlitMaterials() {
-    this.lightingMode = "Unlit";
-    let matUUIDs = Array.from(this.materials.keys());
-    matUUIDs.forEach((matUUID) => this.createUnlitMaterialForLitMaterial(matUUID));
-  }
-
-  createMaterialForTexture(texture: Texture): Material {
-    let newMaterial = new MeshStandardMaterial({map: texture});
-    this.addMaterialTexture(texture, newMaterial);
-
-    return newMaterial;
-  }
-
 //#endregion
 
 //#region Removing from scene
-
   removeMaterial(uuid: string): void {
     const material = this.materials.get(uuid);
     if (!material) {
       console.error(`Material with UUID ${uuid} not found.`);
       return;
     }
-
-    let isUnlit = this.unlitToLitMaterials.has(uuid);
-    let litMaterial = this.unlitToLitMaterials.get(uuid);
 
     // Remove references to this material from the materialUUIDsToMeshUUIDs map
     const meshUUIDs = this.materialUUIDsToMeshUUIDs.get(uuid);
@@ -415,17 +414,16 @@ export default class ResourceManager{
         const mesh = this.objects.get(meshUUID) as Mesh;
         if (mesh && mesh instanceof Mesh) {
           if (mesh.material instanceof Material) {
-            mesh.material = this.defaultMaterial;
+            mesh.material = this.defaultMaterial.m();
             this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)?.add(meshUUID);
           } else {
             for (let i = 0; i < mesh.material.length; i++) {
-              mesh.material[i] = this.defaultMaterial;
+              mesh.material[i] = this.defaultMaterial.m();
               this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)?.add(meshUUID);
             }
           }
         }
       }
-      if (isUnlit) this.materialUUIDsToMeshUUIDs.delete(litMaterial!);
       this.materialUUIDsToMeshUUIDs.delete(uuid);
     }
 
@@ -439,7 +437,7 @@ export default class ResourceManager{
         this.textureUUIDsToMaterialUUIDs.get(texture.uuid)?.delete(uuid);
         let materials = this.getMaterialsUsingTexture(texture.uuid);
         
-        if (materials.length  == 0 || (isUnlit && materials.length == 1 && materials[0].uuid === litMaterial)) {
+        if (materials.length  == 0) {
           this.textureUUIDsToMaterialUUIDs.delete(texture.uuid);
           this.textures.delete(texture.uuid);
           texture.dispose(); 
@@ -452,11 +450,6 @@ export default class ResourceManager{
     // Remove the material from the materials map
     this.materials.delete(uuid);
     material.dispose();
-    
-    if (isUnlit) {
-      this.materials.get(litMaterial!)?.dispose();
-      this.materials.delete(litMaterial!);
-    }
   }
 
   // remove object and children, and clean up everything unused that relates to it. (geometry, materials, textures)
@@ -470,17 +463,23 @@ export default class ResourceManager{
     object.traverse((instance) => {   
       this.objects.delete(instance.uuid);
       if (instance instanceof Mesh) {
+        // remove geometry entries, and mark them as affect to potentially delete them after the object has been fully traversed
         this.geometryUUIDsToMeshUUIDs.get(instance.geometry.uuid)?.delete(instance.uuid);
         affectedGeometries.add(instance.geometry.uuid);
 
-        let materials = instance.material instanceof Material ? [instance.material] : instance.material;
 
+        // Do the same for Materials
+        let materials = instance.material instanceof Material ? [instance.material] : instance.material;
         for (let material of materials) {
-          this.materialUUIDsToMeshUUIDs.get(material.uuid)?.delete(instance.uuid);
-          affectedMaterials.add(material.uuid);
+          let proxy = this.getMaterialByUUID(material.uuid);
+          if (proxy) {
+            this.materialUUIDsToMeshUUIDs.get(proxy.uuid)?.delete(instance.uuid);
+            affectedMaterials.add(proxy.uuid);
+          }
         }
       }
     });
+
 
     for (let materialUUID of affectedMaterials) {
       if (!this.materialUUIDsToMeshUUIDs.get(materialUUID)?.size) {

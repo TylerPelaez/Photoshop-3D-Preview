@@ -64,8 +64,6 @@ let pressedKeys: {[_keyName: string]: boolean} = {};
 let lightTarget: THREE.Object3D;
 let light: THREE.DirectionalLight;
 
-let lightingMode: "Unlit" | "Lit" = "Lit"; 
-
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
 init();
@@ -238,16 +236,9 @@ function updateOrbitControls() {
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
-  console.log(event);
   if (event.key.toLowerCase() === "l") {
-     lightingMode = lightingMode == "Lit" ? "Unlit" : "Lit";
-     if (lightingMode == "Lit") {
-      resourceManager.swapToLitMaterials();
-     } else {
-      resourceManager.swapToUnlitMaterials();
-     }
+    resourceManager.toggleLightingMode();
   }
-  
 }
 
 
@@ -302,8 +293,6 @@ function selectObject(object: THREE.Object3D | null) {
   currentlySelectedObject = object;
   if (currentlySelectedObject != null) {
     if (object instanceof THREE.Mesh) {
-      console.log(object);
-
       let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
       outlineObject = new THREE.Object3D();
 
@@ -378,12 +367,9 @@ function onContextMenuChoiceMade(key: choiceStrings) {
     if (currentlySelectedObject instanceof THREE.Mesh) {
       let texture = resourceManager.getTextureForDocumentId(activeDocument);
       if (texture) {
-        let material = resourceManager.createMaterialForTexture(texture);
-        resourceManager.setMeshMaterial(currentlySelectedObject, material);
-
-        if (lightingMode == "Unlit") {
-          resourceManager.createUnlitMaterialForLitMaterial(material.uuid);
-        }
+        let newMaterial = resourceManager.createMaterialProxy(new THREE.MeshStandardMaterial({map: texture}));
+        resourceManager.addMaterialTexture(texture, newMaterial.uuid);
+        resourceManager.setMeshMaterial(currentlySelectedObject, newMaterial);
       }
     }
   }
@@ -449,10 +435,7 @@ function loadObject(objectFileURL: string, objectFileName: string) {
       currentObject = obj.scene;
     }
 
-    console.log(currentObject);
     resourceManager.addObjectToScene(currentObject);
-
-
 
     const boundingBox = new THREE.Box3();
     boundingBox.setFromObject(currentObject);
