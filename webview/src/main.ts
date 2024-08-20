@@ -64,7 +64,7 @@ let pressedKeys: {[_keyName: string]: boolean} = {};
 let lightTarget: THREE.Object3D;
 let light: THREE.DirectionalLight;
 
-let lightingMode: "Unlit" | "Lit" = "Unlit"; 
+let lightingMode: "Unlit" | "Lit" = "Lit"; 
 
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
@@ -99,7 +99,7 @@ function init() {
   scene.add(light);
   scene.add(lightTarget);
 
-  light.position.set(-10,10,-10);
+  light.position.set(-1000,1000,-1000);
   light.target = lightTarget;
 
 
@@ -238,6 +238,16 @@ function updateOrbitControls() {
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
+  console.log(event);
+  if (event.key.toLowerCase() === "l") {
+     lightingMode = lightingMode == "Lit" ? "Unlit" : "Lit";
+     if (lightingMode == "Lit") {
+      resourceManager.swapToLitMaterials();
+     } else {
+      resourceManager.swapToUnlitMaterials();
+     }
+  }
+  
 }
 
 
@@ -368,10 +378,12 @@ function onContextMenuChoiceMade(key: choiceStrings) {
     if (currentlySelectedObject instanceof THREE.Mesh) {
       let texture = resourceManager.getTextureForDocumentId(activeDocument);
       if (texture) {
-        let newMaterial = new THREE.MeshBasicMaterial({map: texture});
-        resourceManager.addMaterialTexture(texture, newMaterial);
+        let material = resourceManager.createMaterialForTexture(texture);
+        resourceManager.setMeshMaterial(currentlySelectedObject, material);
 
-        resourceManager.setMeshMaterial(currentlySelectedObject, newMaterial);
+        if (lightingMode == "Unlit") {
+          resourceManager.createUnlitMaterialForLitMaterial(material.uuid);
+        }
       }
     }
   }

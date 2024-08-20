@@ -34,6 +34,7 @@ interface TexturedMaterial extends Material {
   transmissionMap?: Texture;
 }
 
+
 // For tracking objects, primarily to facilitate disposing of them once they are no longer used.
 export default class ResourceManager{
   scene: Scene;
@@ -42,6 +43,8 @@ export default class ResourceManager{
   materials = new Map<string, Material>();
   geometries = new Map<string, BufferGeometry>();
 
+  unlitToLitMaterials = new Map<string, string>();
+
   documentIdsToTextureUUID = new Map<number, string>();
   textureUUIDsToMaterialUUIDs = new Map<string, Set<string>>();
 
@@ -49,6 +52,8 @@ export default class ResourceManager{
   materialUUIDsToMeshUUIDs = new Map<string, Set<string>> ();
 
   defaultMaterial = new MeshBasicMaterial({color: 0xFFFFFF});
+
+  lightingMode: "Lit" | "Unlit" = "Lit";
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -141,6 +146,10 @@ export default class ResourceManager{
 
     this.scene.add(obj);
 
+
+    let materialsToMakeUnlit: string[] = [];
+
+
     obj.traverse((instance) => {
       this.objects.set(instance.uuid, instance);
       if (instance instanceof Mesh) {
@@ -161,17 +170,23 @@ export default class ResourceManager{
         for (let i = 0; i < instanceMaterials.length; i++) {
           let material = instanceMaterials[i];
           if (!(material instanceof MeshBasicMaterial || material instanceof MeshLambertMaterial || 
-            material instanceof MeshPhongMaterial || material instanceof MeshStandardMaterial)) {
-              console.error("Unsupported Material Type -- will be replaced with DEFAULT Material");
-              if (instance.material instanceof Material) {
-                instance.material = this.defaultMaterial;
-              } else {
-                instance.material[i] = this.defaultMaterial;
-              }
-
-              this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)!.add(instance.uuid);
-              continue;
+                material instanceof MeshPhongMaterial || material instanceof MeshStandardMaterial)) {
+            console.error("Unsupported Material Type -- will be replaced with DEFAULT Material");
+            if (instance.material instanceof Material) {
+              instance.material = this.defaultMaterial;
+            } else {
+              instance.material[i] = this.defaultMaterial;
             }
+            
+            
+
+            this.materialUUIDsToMeshUUIDs.get(this.defaultMaterial.uuid)!.add(instance.uuid);
+            continue;
+          }
+
+          if (this.lightingMode === "Unlit" && !(material instanceof MeshBasicMaterial)) {
+            materialsToMakeUnlit.push(material.uuid);
+          }
 
 
           // Add material
@@ -214,6 +229,8 @@ export default class ResourceManager{
         }
       }
     });
+
+    materialsToMakeUnlit.forEach(uuid => this.createUnlitMaterialForLitMaterial(uuid));
   }
 
 
@@ -292,6 +309,91 @@ export default class ResourceManager{
   }
 
 
+  swapToLitMaterials() {
+    this.lightingMode = "Lit";
+    let unlitMaterials = Array.from(this.unlitToLitMaterials.keys());
+
+    unlitMaterials.forEach(unlitUUID => {
+      let litUUID = this.unlitToLitMaterials.get(unlitUUID);
+      let litMat = this.materials.get(litUUID!);
+      let unlitMat = this.materials.get(unlitUUID);
+
+
+      let meshes = this.materialUUIDsToMeshUUIDs.get(unlitUUID);
+      if (meshes) {
+        meshes.forEach(meshUUID => {
+          let mesh = this.objects.get(meshUUID);
+          if (mesh instanceof Mesh) {
+            mesh.material = litMat;
+          }
+        });
+
+        this.materialUUIDsToMeshUUIDs.delete(unlitUUID);
+      }
+
+      let textures = this.getTexturesUsedByMaterial(unlitUUID);
+      textures.forEach(tex => {
+        this.textureUUIDsToMaterialUUIDs.get(tex.uuid)?.delete(unlitUUID);
+      })
+      
+
+      this.unlitToLitMaterials.delete(unlitUUID);
+      this.materials.delete(unlitUUID);
+      unlitMat?.dispose();
+    });
+  }
+
+  createUnlitMaterialForLitMaterial(materialUUID: string) {
+    let meshes = Array.from(this.materialUUIDsToMeshUUIDs.get(materialUUID) ?? []);
+
+    let litMat = this.materials.get(materialUUID) as TexturedMaterial;
+    let unlitMat = new MeshBasicMaterial();
+
+    if (litMat instanceof MeshBasicMaterial || litMat instanceof MeshStandardMaterial || litMat instanceof MeshPhongMaterial || litMat instanceof MeshLambertMaterial) {
+      unlitMat.color = litMat.color;
+      unlitMat.fog = litMat.fog;
+      unlitMat.envMapRotation = litMat.envMapRotation;
+    }
+    unlitMat.map = litMat?.map ?? null;
+    unlitMat.alphaMap = litMat?.alphaMap ?? null
+    unlitMat.aoMap = litMat?.aoMap ?? null;
+    unlitMat.envMap = litMat?.envMap ?? null;
+    unlitMat.lightMap = litMat?.lightMap ?? null;
+    unlitMat.specularMap = litMat?.specularMap ?? null;
+
+
+    this.unlitToLitMaterials.set(unlitMat.uuid, materialUUID);
+    this.materials.set(unlitMat.uuid, unlitMat);
+
+    let textures = this.getTexturesUsedByMaterial(materialUUID);
+    textures.forEach(tex => {
+      this.textureUUIDsToMaterialUUIDs.get(tex.uuid)?.add(unlitMat.uuid);
+    });
+
+    this.materialUUIDsToMeshUUIDs.set(unlitMat.uuid, new Set());
+
+    meshes.forEach((meshUUID) => {
+      let mesh = this.objects.get(meshUUID);
+      if (mesh instanceof Mesh) {
+        mesh.material = unlitMat;
+      }
+      this.materialUUIDsToMeshUUIDs.get(unlitMat.uuid)?.add(meshUUID);
+    });
+  }
+
+  swapToUnlitMaterials() {
+    this.lightingMode = "Unlit";
+    let matUUIDs = Array.from(this.materials.keys());
+    matUUIDs.forEach((matUUID) => this.createUnlitMaterialForLitMaterial(matUUID));
+  }
+
+  createMaterialForTexture(texture: Texture): Material {
+    let newMaterial = new MeshStandardMaterial({map: texture});
+    this.addMaterialTexture(texture, newMaterial);
+
+    return newMaterial;
+  }
+
 //#endregion
 
 //#region Removing from scene
@@ -302,6 +404,9 @@ export default class ResourceManager{
       console.error(`Material with UUID ${uuid} not found.`);
       return;
     }
+
+    let isUnlit = this.unlitToLitMaterials.has(uuid);
+    let litMaterial = this.unlitToLitMaterials.get(uuid);
 
     // Remove references to this material from the materialUUIDsToMeshUUIDs map
     const meshUUIDs = this.materialUUIDsToMeshUUIDs.get(uuid);
@@ -320,6 +425,7 @@ export default class ResourceManager{
           }
         }
       }
+      if (isUnlit) this.materialUUIDsToMeshUUIDs.delete(litMaterial!);
       this.materialUUIDsToMeshUUIDs.delete(uuid);
     }
 
@@ -333,7 +439,7 @@ export default class ResourceManager{
         this.textureUUIDsToMaterialUUIDs.get(texture.uuid)?.delete(uuid);
         let materials = this.getMaterialsUsingTexture(texture.uuid);
         
-        if (materials.length  == 0) {
+        if (materials.length  == 0 || (isUnlit && materials.length == 1 && materials[0].uuid === litMaterial)) {
           this.textureUUIDsToMaterialUUIDs.delete(texture.uuid);
           this.textures.delete(texture.uuid);
           texture.dispose(); 
@@ -346,6 +452,11 @@ export default class ResourceManager{
     // Remove the material from the materials map
     this.materials.delete(uuid);
     material.dispose();
+    
+    if (isUnlit) {
+      this.materials.get(litMaterial!)?.dispose();
+      this.materials.delete(litMaterial!);
+    }
   }
 
   // remove object and children, and clean up everything unused that relates to it. (geometry, materials, textures)
