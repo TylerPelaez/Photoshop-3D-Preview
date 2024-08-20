@@ -1,6 +1,6 @@
 import Queue from './lib/queue';
 
-import { photoshop } from "./lib/globals";
+import { photoshop, uxp } from "./lib/globals";
 import { ActionDescriptor } from 'photoshop/dom/CoreModules';
 import { imaging } from 'photoshop/dom/ImagingModule';
 
@@ -27,6 +27,9 @@ let webviewReady = false;
 let documentDebouncers = new Map<number, DebouncedFunc<typeof performPixelUpdate>>();
 
 let lastActiveDocumentId: number;
+
+
+let idle = true;
 
 interface ImageChangeDescriptor {
     documentID: number;
@@ -55,6 +58,38 @@ init();
 
 function init()
 {  
+  uxp.entrypoints.setup({
+    panels: {
+      "mainPanel": {
+        create(rootNode) {
+          return new Promise(function (resolve, reject) {
+            console.log('Plugin panel created');
+            idle = false;
+            resolve(null);
+          });
+        },
+        destroy(rootNode) {
+          return new Promise(function (resolve, reject) {
+            console.log('Destroy panel');
+            enterIdle();
+            resolve(null);
+          });
+        }
+      }
+    }
+  })
+
+  document.addEventListener('uxpcommand', (event) => {
+    let commandId = (event as any).commandId;
+    if (commandId === 'uxpshowpanel') {
+      console.log("panel is showing");
+      idle = false;
+      pushAllUpdates();
+    } else if (commandId === 'uxphidepanel') {
+      console.log('panel is hiding');
+      enterIdle();
+    }
+  })
   settingsManager = new SettingsManager();
 
   PhotoshopAction.addNotificationListener(['historyStateChanged'], (event, descriptor) => {console.log("Event:" + event + " Descriptor: " + JSON.stringify(descriptor))});
@@ -98,7 +133,18 @@ function init()
   setInterval(processUpdates, 16);
 }
 
-
+function enterIdle() {
+  idle = true;
+  setTimeout(async () => {
+    if (!addon) {
+      addon = await require("bolt-uxp-hybrid.uxpaddon");
+    }
+    console.log("Clearing C++ cache");
+    app.documents.forEach((doc) => {
+      addon.close_document(doc.id);
+    })
+  }, 30000);
+}
 
 function pushAllUpdates() {
   app.documents.forEach(document => {
@@ -108,6 +154,9 @@ function pushAllUpdates() {
 
 async function handleImageChanged(documentID: number, forceFullUpdate: boolean = false): Promise<void>
 {
+  if (idle) {
+    return;
+  }
   if (forceFullUpdate) return performPixelUpdate(documentID, forceFullUpdate); 
 
   if (!documentDebouncers.has(documentID)) {

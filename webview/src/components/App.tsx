@@ -98,7 +98,7 @@ function App(props: AppProps) {
             <DropdownItem key="controls">Control Scheme</DropdownItem>
           </DropdownMenu>
         </Dropdown>
-        <Button title="Toggle Lighting" 
+        <Button title="Toggle Directional Light" 
         size="sm" radius="sm" onClick={props.onLightingTogglePressed} 
         style={{float: "right", marginLeft: "8px"}} 
         isIconOnly color="default" aria-label="Lighting">
