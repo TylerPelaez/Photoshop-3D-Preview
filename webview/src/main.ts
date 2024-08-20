@@ -66,6 +66,7 @@ let light: THREE.DirectionalLight;
 
 let lightingMode: "Unlit" | "Lit" = "Unlit"; 
 
+const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
 init();
 
@@ -83,7 +84,7 @@ function init() {
   renderer.setAnimationLoop( render );
 
   camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
-  camera.position.set( 3, 3.5, 2 );
+  camera.position.set(cameraInitialPosition.x, cameraInitialPosition.y, cameraInitialPosition.z);
   scene.add(camera);
 
   controls = new OrbitControls( camera, renderer.domElement );
@@ -309,7 +310,7 @@ function selectObject(object: THREE.Object3D | null) {
       outlineObject.attach(geometry);
 
       geometry.position.set(-center.x, -center.y, -center.z);
-      outlineObject.scale.multiplyScalar(1.05);
+      outlineObject.scale.multiply(object.scale).multiplyScalar(1.05);
       scene.add(outlineObject);
     }
   }
@@ -438,6 +439,27 @@ function loadObject(objectFileURL: string, objectFileName: string) {
 
     console.log(currentObject);
     resourceManager.addObjectToScene(currentObject);
+
+
+
+    const boundingBox = new THREE.Box3();
+    boundingBox.setFromObject(currentObject);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    boundingBox.getCenter(center);
+    boundingBox.getSize(size);
+    const maxDim = Math.max( size.x, size.y, size.z );
+    const fov = camera.fov * ( Math.PI / 180 );
+    let cameraZ = maxDim / 2 / Math.tan( fov / 2 );
+
+    cameraZ *= 1.25;
+    let newPos = new THREE.Vector3(cameraInitialPosition.x, cameraInitialPosition.y, cameraInitialPosition.z);
+    newPos.normalize();
+    camera.position.copy(newPos.multiplyScalar(maxDim * 1.3));
+
+
+    camera.updateProjectionMatrix();
+    controls.update();
 
     URL.revokeObjectURL(objectFileURL);
   }, undefined, function(error) {
