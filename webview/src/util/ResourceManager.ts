@@ -1,6 +1,6 @@
 import { Mesh, MeshBasicMaterial, MeshStandardMaterial, MeshLambertMaterial, MeshPhongMaterial, BufferGeometry, Scene, Object3D, Texture, Material } from "three";
 
-let useLit = true;
+let useLit = false;
 
 interface TexturedMaterial extends Material {
   // Basic Material
@@ -151,6 +151,13 @@ export default class ResourceManager {
 
 
 //#region Adding To Scene
+  setTexturesFlipY(val: boolean) {
+    this.textures.forEach((tex, uuid) => {
+      tex.flipY = val;
+      tex.needsUpdate = true;
+    })
+  }
+
   toggleLightingMode() {
     useLit = !useLit;
 

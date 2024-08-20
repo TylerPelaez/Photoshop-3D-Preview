@@ -61,13 +61,14 @@ let outlineObject: THREE.Object3D | null;
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
 
-let ambientLight: THREE.AmbientLight;
 let lightTarget: THREE.Object3D;
 let light: THREE.DirectionalLight;
 let lightHelper: THREE.DirectionalLightHelper;
 
 let pointerDown: boolean = false;
 let lightRotateStart: THREE.Vector2 | null = new THREE.Vector2();
+
+let flipY = true;
 
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
@@ -186,7 +187,7 @@ function handleUpdate(data: PartialUpdate) {
     }
 
     texture = new THREE.DataTexture(pixelData, width, height);
-    texture.flipY = true;
+    texture.flipY = flipY;
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -480,6 +481,13 @@ function loadObject(objectFileURL: string, objectFileName: string) {
   var key = splitPath[splitPath.length - 1] as keyof typeof loaders;
   let loader= loaders[key];
 
+  let prevFlip = flipY;
+  flipY = (key != "glb" && key != "gltf") 
+
+  if (prevFlip != flipY) {
+    resourceManager.setTexturesFlipY(flipY);
+  }
+
   loader.load(objectFileURL, function(obj) {
     if (obj instanceof THREE.Group) {
       currentObject = obj;
@@ -487,6 +495,7 @@ function loadObject(objectFileURL: string, objectFileName: string) {
     else if (loader instanceof GLTFLoader) {
       currentObject = obj.scene;
     }
+
 
     resourceManager.addObjectToScene(currentObject);
 

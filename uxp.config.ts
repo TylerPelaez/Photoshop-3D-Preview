@@ -37,26 +37,11 @@ const manifest: UXP_Manifest_Webview_Support = {
       minimumSize: { width: 300, height: 150 },
       preferredDockedSize: { width: 400, height: 300 },
       preferredFloatingSize: { width: 480, height: 320 },
-      icons: [
-        {
-          width: 23,
-          height: 23,
-          path: "icons/dark.png",
-          scale: [1, 2],
-          theme: ["darkest", "dark", "medium"],
-        },
-        {
-          width: 23,
-          height: 23,
-          path: "icons/light.png",
-          scale: [1, 2],
-          theme: ["lightest", "light"],
-        },
-      ],
+      maximumSize: { width: 4096, height: 4096 },
     },
   ],
   requiredPermissions: {
-    localFileSystem: "fullAccess",
+    localFileSystem: "plugin",
     launchProcess: {
       schemes: ["https", "slack", "file", "ws"],
       extensions: [".psd", ".bat", ".cmd"],
@@ -66,7 +51,6 @@ const manifest: UXP_Manifest_Webview_Support = {
         `ws://localhost:${extraPrefs.hotReloadPort}`, // Required for hot reload
       ],
     },
-    clipboard: "readAndWrite",
     webview: {
       allow: "yes",
       domains: ["http://127.0.0.1:5173"],
@@ -82,11 +66,11 @@ const manifest: UXP_Manifest_Webview_Support = {
     addon: {
       name: "bolt-uxp-hybrid.uxpaddon",
   },
-    icons: [
+  icons: [
     {
-      width: 48,
-      height: 48,
-      path: "icons/plugin-icon.png",
+      width: 23,
+      height: 23,
+      path: "icons/icon.png",
       scale: [1, 2],
       theme: ["darkest", "dark", "medium", "lightest", "light", "all"],
       species: ["pluginList"],
