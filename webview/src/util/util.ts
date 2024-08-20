@@ -15,18 +15,21 @@ export const BuiltInSchemes = new Map<ControlSchemeType, ControlScheme>([
     pan: { key: "Alt", mouseButton: MouseButton.MIDDLE },
     rotate: { key: "Alt", mouseButton: MouseButton.LEFT },
     zoom: { key: "Alt", mouseButton: MouseButton.RIGHT },
+    light: { key: "l", mouseButton: MouseButton.LEFT },
     scrollZoomEnabled: true,
   }],
   [ControlSchemeType.BLENDER, {
     pan: { key: "Shift", mouseButton: MouseButton.MIDDLE },
     rotate: { mouseButton: MouseButton.MIDDLE },
     zoom: { key: "Control", mouseButton: MouseButton.MIDDLE },
+    light: { key: "l", mouseButton: MouseButton.LEFT },
     scrollZoomEnabled: true,
   }],
   [ControlSchemeType.PHOTOSHOP, {
     pan: { key: " ", mouseButton: MouseButton.LEFT },
     rotate: { key: "r", mouseButton: MouseButton.LEFT },
     zoom: { key: "z", mouseButton: MouseButton.LEFT },
+    light: { key: "l", mouseButton: MouseButton.LEFT },
     scrollZoomEnabled: true, 
   }]
 ]);

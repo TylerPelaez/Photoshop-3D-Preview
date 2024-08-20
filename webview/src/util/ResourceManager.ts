@@ -45,7 +45,7 @@ interface MaterialProxy {
 }
 
 // For tracking objects, primarily to facilitate disposing of them once they are no longer used.
-export default class ResourceManager{
+export default class ResourceManager {
   scene: Scene;
   objects = new Map<string, Object3D>();
   textures = new Map<string, Texture>();
@@ -72,6 +72,10 @@ export default class ResourceManager{
 
 
 //#region  Getters 
+  lightingEnabled(): boolean {
+    return useLit;
+  }
+
   getMaterialsUsingTexture(uuid: string): MaterialProxy[] {
     let materialUUIDS = this.textureUUIDsToMaterialUUIDs.get(uuid);
     if (!materialUUIDS) return [];

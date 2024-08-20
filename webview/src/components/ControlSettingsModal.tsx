@@ -15,7 +15,7 @@ function capitalize(val: string) {
 
 function getTabContent(scheme: ControlScheme, action: string) {
   let label = action;  
-  let input = action == "Pan" ? scheme.pan : action == "Zoom" ? scheme.zoom : action == "Rotate" ? scheme.rotate : undefined;
+  let input = action == "Pan" ? scheme.pan : action == "Zoom" ? scheme.zoom : action == "Rotate" ? scheme.rotate : action == "Move Light" ? scheme.light : undefined;
   let chipContent = "";
   if (!input) {
     chipContent = "Disabled"
@@ -56,7 +56,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
     tabs.push(
       <Tab className="flex justify-center w-full" key={schemeType} title={capitalize(ControlSchemeType[schemeType])}>
         <Listbox shouldHighlightOnFocus={false}  className="w-full max-w-[260px] border-small px-1 py-2 rounded-small border-default-200 dark:border-default-100">
-          {["Pan", "Rotate", "Zoom"].map(action => getTabContent(scheme, action))}
+          {["Pan", "Rotate", "Zoom", "Move Light"].map(action => getTabContent(scheme, action))}
         </Listbox>
       </Tab>
     );

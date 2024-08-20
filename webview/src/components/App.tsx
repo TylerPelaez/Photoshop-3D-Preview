@@ -9,6 +9,8 @@ import DisplaySettingsModal from './DisplaySettingsModal';
 import ContextMenu, { choiceStrings } from './ContextMenu';
 import { Vector2 } from 'three';
 import ControlSettingsModal from './ControlSettingsModal';
+import LightIcon from './LightIcon';
+import HamburgerIcon from './HamburgerIcon';
 
 export interface AppProps {
   userSettings: UserSettings, 
@@ -17,7 +19,9 @@ export interface AppProps {
   contextMenuOpen: boolean,
   hasObjectSelected: boolean,
   contextMenuPosition: Vector2,
-  onContextMenuChoiceMade: (key: choiceStrings) => void
+  onContextMenuChoiceMade: (key: choiceStrings) => void,
+  lightingEnabled: boolean,
+  onLightingTogglePressed: () => void
 }
 
 interface ModalData {
@@ -83,7 +87,9 @@ function App(props: AppProps) {
       <main className="dark text-foreground">
         <Dropdown size="sm" radius="sm">
           <DropdownTrigger>
-            <Button size="sm" radius="sm" color="default">Menu</Button>
+            <Button size="sm" radius="sm" color="default" title="Menu">
+              <HamburgerIcon />
+            </Button>
           </DropdownTrigger>
           <DropdownMenu onAction={OnDropdownMenuAction}>
             <DropdownItem key="load">Load Model</DropdownItem>
@@ -92,10 +98,17 @@ function App(props: AppProps) {
             <DropdownItem key="controls">Control Scheme</DropdownItem>
           </DropdownMenu>
         </Dropdown>
+        <Button title="Toggle Lighting" 
+        size="sm" radius="sm" onClick={props.onLightingTogglePressed} 
+        style={{float: "right", marginLeft: "8px"}} 
+        isIconOnly color="default" aria-label="Lighting">
+          <LightIcon fill={props.lightingEnabled ? "#FFFFFF" : "#1f1f1f"} size={24}/>
+        </Button>    
+
         {modals.map((modal) => ( // Cuts down on some boilerplate
           <Modal key={modal.key} isOpen={modal.disclosure.isOpen} onOpenChange={modal.disclosure.onOpenChange} placement="top-center">
             <ModalContent>
-              {modal.component}  
+              {modal.component} 
             </ModalContent>  
           </Modal>
         ))}

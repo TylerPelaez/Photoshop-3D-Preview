@@ -61,8 +61,13 @@ let outlineObject: THREE.Object3D | null;
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
 
+let ambientLight: THREE.AmbientLight;
 let lightTarget: THREE.Object3D;
 let light: THREE.DirectionalLight;
+let lightHelper: THREE.DirectionalLightHelper;
+
+let pointerDown: boolean = false;
+let lightRotateStart: THREE.Vector2 | null = new THREE.Vector2();
 
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
@@ -91,14 +96,19 @@ function init() {
   viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
   viewportGizmo.target = controls.target;
 
-  light = new THREE.DirectionalLight();
+  light = new THREE.DirectionalLight();  
   lightTarget = new THREE.Object3D();
 
   scene.add(light);
   scene.add(lightTarget);
 
-  light.position.set(-1000,1000,-1000);
   light.target = lightTarget;
+
+  light.position.copy(new THREE.Vector3(1000, 1000, 1000));
+
+  lightHelper = new THREE.DirectionalLightHelper(light);
+  lightHelper.visible = false;
+  scene.add(lightHelper);
 
 
   resourceManager = new ResourceManager(scene);
@@ -106,8 +116,10 @@ function init() {
   window.addEventListener("message", onMessageReceived);
   window.addEventListener("resize", onWindowResize);
   window.addEventListener("pointerdown", onPointerDown);
+  window.addEventListener("pointerup", onPointerUp)
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  window.addEventListener( 'pointermove', onPointerMove );
 
   onWindowResize();
 
@@ -115,6 +127,8 @@ function init() {
 }
 
 function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
+  lightHelper.update();
+
   if (tween && tween.isPlaying()) tween.update(time);
   renderer.render( scene, camera );
   viewportGizmo.render();
@@ -236,9 +250,6 @@ function updateOrbitControls() {
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
-  if (event.key.toLowerCase() === "l") {
-    resourceManager.toggleLightingMode();
-  }
 }
 
 
@@ -315,8 +326,14 @@ function selectObject(object: THREE.Object3D | null) {
   }
 }
 
+function onPointerUp(event: PointerEvent) {
+  pointerDown = false;
+  lightRotateStart = null;
+  lightHelper.visible = false;
+}
 
 function onPointerDown(event: PointerEvent) {
+  pointerDown = true;
   if (contextMenuOpen) {
     renderUI(false);
   }
@@ -328,11 +345,45 @@ function onPointerDown(event: PointerEvent) {
   } else if (event.button == 2 && controls.mouseButtons.RIGHT == null) {
     renderUI(true, new THREE.Vector2(event.clientX, event.clientY));
   }
+  if (pressedKeys["l"] && !controls.mouseButtons.LEFT && !controls.mouseButtons.RIGHT && !controls.mouseButtons.MIDDLE) {
+    lightHelper.visible = true;
+  }
+}
+
+function onPointerMove(event: PointerEvent) {
+  if (!pressedKeys["l"] || !pointerDown) return;
+  if (controls.mouseButtons.LEFT || controls.mouseButtons.RIGHT || controls.mouseButtons.MIDDLE) return;
+  lightHelper.visible = true;
+
+  let lightRotateEnd = new THREE.Vector2();
+  lightRotateEnd.set(event.clientX, event.clientY);
+  if (lightRotateStart == null) {
+    lightRotateStart = new THREE.Vector2().copy(lightRotateEnd);
+  } 
+
+  let rotateDelta = new THREE.Vector2().subVectors(lightRotateEnd, lightRotateStart).multiplyScalar(1.0);
+
+  let spherical = new THREE.Spherical().setFromVector3(light.position);
+  spherical.theta += ( 2 * Math.PI * rotateDelta.x / window.innerHeight );
+
+  spherical.phi += ( 2 * Math.PI * rotateDelta.y / window.innerHeight );
+
+  spherical.makeSafe();
+
+  let newLightPos = new THREE.Vector3().setFromSpherical(spherical);
+  light.position.copy(newLightPos);
+
+  lightRotateStart.copy(lightRotateEnd);
 }
 
 //#endregion
 
 //#region UI Rendering and callbacks
+function onLightingTogglePressed() {
+  resourceManager.toggleLightingMode();
+  renderUI(false);
+}
+
 
 function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector2 = new THREE.Vector2(0, 0)) {
   if (!userSettings) return;
@@ -344,7 +395,9 @@ function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector
     contextMenuOpen: contextMenuVisible,
     hasObjectSelected: currentlySelectedObject != null,
     contextMenuPosition: contextMenuPosition,
-    onContextMenuChoiceMade: onContextMenuChoiceMade
+    onContextMenuChoiceMade: onContextMenuChoiceMade,
+    lightingEnabled: resourceManager.lightingEnabled(),
+    onLightingTogglePressed: onLightingTogglePressed,
   }));
 
   contextMenuOpen = contextMenuVisible;

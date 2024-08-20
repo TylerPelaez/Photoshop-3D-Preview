@@ -39,6 +39,7 @@ interface ControlScheme {
   pan?: InputCombination,
   zoom?: InputCombination,
   rotate?: InputCombination,
+  light?: InputCombination,
 }
 
 interface ControlsSettings {
