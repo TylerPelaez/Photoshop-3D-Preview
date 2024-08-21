@@ -339,7 +339,7 @@ function selectObjects(objects: THREE.Object3D[]) {
 
     currentlySelectedObjects.push(object);
     if (object instanceof THREE.Mesh) {
-      let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
+      let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#3aafdc"), side: THREE.BackSide } );
       let outlineObject = new THREE.Object3D();
 
       let center = new THREE.Vector3();
@@ -638,7 +638,7 @@ function updateGrid() {
   var gs = userSettings.gridSettings;
 
   if (gs.visible) {
-    grid = new THREE.GridHelper( gs.size, gs.divisions, 0x0000ff, 0x808080 );
+    grid = new THREE.GridHelper( gs.size, gs.divisions, 0xaaaaaa, 0x808080 );
     scene.add(grid);
   }
 }
