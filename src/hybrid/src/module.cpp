@@ -1,55 +1,18 @@
-/************************************************************************
- * Copyright 2022 Adobe
- * All Rights Reserved.
- *
- * NOTICE: Adobe permits you to use, modify, and distribute this file in
- * accordance with the terms of the Adobe license agreement accompanying
- * it.
- *************************************************************************
- */
-
 #include <exception>
 #include <stdexcept>
 #include <string>
-#include <chrono>
-#include <iostream>
-#include <fstream>
+#include <memory>
 #include <unordered_map>
 
 #include "./utilities/UxpAddon.h"
-#include "./utilities/UxpTask.h"
-#include "./utilities/UxpValue.h"
-
-
-std::ofstream logger;
-
-long long GetCurrentTimeMillis() {
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-}
-
-void LogError(std::string msg) {
-    logger << "ERROR: " << msg << std::endl;
-}
-
-void LogTiming(std::string msg) {
-    logger << msg << ": " << GetCurrentTimeMillis() << std::endl;
-}
-
-void LogTask(std::string msg, size_t task_id) {
-    logger << task_id << ": " << msg << std::endl;
-}
-
-void LogTaskTiming(std::string msg, size_t task_id) {
-    LogTiming("Task " + std::to_string(task_id) + ": " + msg);
-}
-
 
 namespace {
-    std::unordered_map< int64_t, std::unique_ptr<std::vector<char16_t> > > document_id_to_pixel_array;
+    std::unordered_map< int64_t, std::unique_ptr<std::vector<char16_t> > > document_id_to_pixel_array; // image data cache
 
 
+/**
+ * Helper data structure for function parameters
+ */
 class TaskParams {
 public:
     uint8_t* pixel_data;
@@ -68,7 +31,9 @@ public:
 
 addon_value ConvertBatchToString(addon_env env, const TaskParams& params);
 
-
+/**
+ * Clear the image data cache entry for the given document. This is invoked on the javascript thread.
+ */
 addon_value CloseDocument(addon_env env, addon_callback_info info) {
     try {
     
@@ -97,11 +62,11 @@ addon_value CloseDocument(addon_env env, addon_callback_info info) {
     }
 }
 
+/**
+ * Entrypoint for UXP caller, read args and pass on to ConvertBatchToString for processing.
+ */
 addon_value ConvertToString(addon_env env, addon_callback_info info) {
-    LogTiming("ConvertToString Entry");
     try {
-
-        // 4 Arguments are expected: Width, height, Image Data component count, and the pixel data as a UInt8Array
         size_t argc = 7;
         addon_value args[7];
         
@@ -131,118 +96,116 @@ addon_value ConvertToString(addon_env env, addon_callback_info info) {
     }
 }
 
+/**
+ * Convert the 0-255 integral pixel data in either Planar (RRRGGGBBBAAA) or Chunky (RGBARGBARGBA) format to
+ * a UTF-16 string containing the charCodes matching the given pixel data in Chunky format. Can be supplied an offset + batch size in params.
+ * Regardless of whether pixel data is RGB or RGBA format, the response string will be in RGBA format.
+ * 
+ * The pixel data is read into a cache, and this function will return a value of undefined to the javascript caller 
+ * if the data in the given batch is unchanged from the existing cached data. 
+ */
 addon_value ConvertBatchToString(addon_env env, const TaskParams& p) {
-    try {
-        //LogTaskTiming("Start", p.document_id);
+    // In PS Planar format, each "plane" consists of the pixel data in the entire document of an RGB(A) component.
+    // The plane size is just how many pixels in the batch each component should take up.  
+    size_t plane_size = p.pixel_data_byte_length / p.components;
 
-        size_t plane_size = p.pixel_data_byte_length / p.components;
 
+    // Either this is a new documnet or the client changed the texture resolution. Set the cache data to default of all 0 values.
+    if (document_id_to_pixel_array.find(p.document_id) == document_id_to_pixel_array.end() || document_id_to_pixel_array[p.document_id].get()->size() != plane_size * 4) {
+        document_id_to_pixel_array[p.document_id] = std::make_unique<std::vector<char16_t>>(plane_size * 4, 0); 
+    }
 
-        // A change in size suggests the client changed the texture resolution. create new data.
-        if (document_id_to_pixel_array.find(p.document_id) == document_id_to_pixel_array.end() || document_id_to_pixel_array[p.document_id].get()->size() != plane_size * 4) {
-            // Assign 0 as default to all values.... this will be slow the first time it happens most likely :)
-            document_id_to_pixel_array[p.document_id] = std::make_unique<std::vector<char16_t>>(plane_size * 4, 0); 
-        }
+    // Regardless of input data, the response must 
+    size_t length = p.batch_pixel_size * 4;
 
-        size_t length = p.batch_pixel_size * 4;
+    std::vector<char16_t>& data = *(document_id_to_pixel_array[p.document_id].get());
 
-        std::vector<char16_t>& data = *(document_id_to_pixel_array[p.document_id].get());
+    // Create a pointer to the cached data at the given offset
+    char16_t* modified_pixel_data = &(data[p.batch_pixel_offset * 4]);
 
-        char16_t* modified_pixel_data = &(data[p.batch_pixel_offset * 4]);
+    // Whether the pixel data in the batch is different from the cached data.
+    // If force full update is enabled, then always assume pixels have been changed to make this cache-busting and force sending to the webview
+    bool changed = p.force_full_update;
 
-        // If force full update is enabled, then always assume pixels have been changed to ensure we send them to the webview
-        bool changed = p.force_full_update;
+    if (p.is_chunky) {
+        // When data is already chunky, we only need to check for cache-changes and insert 255 for the alpha component if we don't have one.
+        size_t beginning = p.batch_pixel_offset * p.components;
 
-        if (p.is_chunky) {
-            size_t beginning = p.batch_pixel_offset * p.components;
+        if (p.components == 4) {
 
-            if (p.components == 4) {
-
-                for (size_t i = beginning; i < beginning + length; i++) {
-                    const char16_t& val = p.pixel_data[i];
-                    if (changed || modified_pixel_data[i] != val) {
-                        modified_pixel_data[i] = val;
-                        changed = true;
-                    }
-                }
-            } else {
-                size_t current_pixel_index = 0;
-                size_t rgba_index;
-                for (size_t i = beginning; i < beginning + (p.batch_pixel_size * 3); i++) {
-                    rgba_index = current_pixel_index + (i % 3);
-
-                    const char16_t& val = p.pixel_data[i];
-                    if (changed || modified_pixel_data[rgba_index] != val) {
-                        modified_pixel_data[rgba_index] = val;
-                        changed = true;
-                    }
-                    if (i % 3 == 2 && i != 0) {
-                        modified_pixel_data[rgba_index + 1] = 255;
-                        current_pixel_index += 4;
-                    }
+            for (size_t i = beginning; i < beginning + length; i++) {
+                const char16_t& val = p.pixel_data[i];
+                if (changed || modified_pixel_data[i] != val) {
+                    modified_pixel_data[i] = val;
+                    changed = true;
                 }
             }
         } else {
-            // this is the common case. PS files are usually stored in planar fashion.
-            for (int component = 0; component < 4; component++) {
-                size_t batch_start_index = (plane_size * component) + p.batch_pixel_offset;
-                size_t batch_end_index = batch_start_index + p.batch_pixel_size;
+            size_t current_pixel_index = 0;
+            size_t rgba_index;
+            for (size_t i = beginning; i < beginning + (p.batch_pixel_size * 3); i++) {
+                rgba_index = current_pixel_index + (i % 3);
 
-                size_t pixel_position = 0;
-
-                // Force alpha = 255 for every pixel when ps only sends us 3 components
-                if (p.components <= component) {
-                    for (size_t i = batch_start_index; i < batch_end_index; i++ ) {
-                        modified_pixel_data[pixel_position * 4 + component] = 255;
-                        pixel_position++;
-                    }
-                } else {
-                    for (size_t i = batch_start_index; i < batch_end_index; i++ ) {
-                        const size_t& index = pixel_position * 4 + component;
-                        const char16_t& val = p.pixel_data[i];
-
-                        if (changed || modified_pixel_data[index] != val) {
-                            modified_pixel_data[index] = val;
-                            changed = true;
-                        }
-                        pixel_position++;
-                    }
+                const char16_t& val = p.pixel_data[i];
+                if (changed || modified_pixel_data[rgba_index] != val) {
+                    modified_pixel_data[rgba_index] = val;
+                    changed = true;
+                }
+                if (i % 3 == 2 && i != 0) {
+                    modified_pixel_data[rgba_index + 1] = 255;
+                    current_pixel_index += 4;
                 }
             }
         }
+    } else {
+        // This is the common case. PS files are usually stored in planar fashion.
+        // We just need to do the annoying conversion from planar to chunky format before doing our cache check and insertion into the result.
+        for (int component = 0; component < 4; component++) {
+            size_t batch_start_index = (plane_size * component) + p.batch_pixel_offset;
+            size_t batch_end_index = batch_start_index + p.batch_pixel_size;
 
-        //LogTaskTiming("Conversion Done", p.document_id);
-        if (!changed) {
-            addon_value result;
-            Check(UxpAddonApis.uxp_addon_get_undefined(env, &result));
+            size_t pixel_position = 0;
 
-            return result; // We changed nothing, don't submit an update...
+            // Force alpha = 255 for every pixel when ps only sends us 3 components
+            if (p.components <= component) {
+                for (size_t i = batch_start_index; i < batch_end_index; i++ ) {
+                    modified_pixel_data[pixel_position * 4 + component] = 255;
+                    pixel_position++;
+                }
+            } else {
+                for (size_t i = batch_start_index; i < batch_end_index; i++ ) {
+                    const size_t& index = pixel_position * 4 + component;
+                    const char16_t& val = p.pixel_data[i];
+
+                    if (changed || modified_pixel_data[index] != val) {
+                        modified_pixel_data[index] = val;
+                        changed = true;
+                    }
+                    pixel_position++;
+                }
+            }
         }
-        else {
-            addon_value result;
-            Check(UxpAddonApis.uxp_addon_create_string_utf16(env, modified_pixel_data, length, &result));
+    }
 
-            //LogTaskTiming("Complete", p.document_id);
+    if (!changed) {
+        addon_value result;
+        Check(UxpAddonApis.uxp_addon_get_undefined(env, &result));
 
-            logger.flush();
+        return result; // We changed nothing, don't submit an update...
+    }
+    else {
+        addon_value result;
 
-            return result;
-        }
-    } catch(const std::exception& exc) {
-        LogError(exc.what());
-
-    } catch(...) {
-        LogError("Unknown Exception");
+        // This copies the buffer into the result var and will show up in js as a string.
+        Check(UxpAddonApis.uxp_addon_create_string_utf16(env, modified_pixel_data, length, &result));
+        return result;
     }
 }
 
-/* Method invoked when the addon module is being requested by JavaScript
- * This method is invoked on the JavaScript thread.
+/** 
+* Method invoked when the addon module is being requested by javascript. Declare the functions so they can be called in JS.
  */
 addon_value Init(addon_env env, addon_value exports, const addon_apis& addonAPIs) {
-    logger.open("C:\\Users\\nrdft\\AppData\\Roaming\\Adobe\\Adobe Photoshop 2024\\Logs\\logfile.txt", std::ios::app);
-    
-    LogTiming("Init");
     document_id_to_pixel_array = std::unordered_map<int64_t, std::unique_ptr<std::vector<char16_t> > >();
 
     addon_status status = addon_ok;
@@ -285,8 +248,6 @@ UXP_ADDON_INIT(Init)
 
 void terminate(addon_env env) {
     try {
-        logger.flush();
-        logger.close();
     } catch (...) {
     }
 }

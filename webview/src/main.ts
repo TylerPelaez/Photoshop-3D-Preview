@@ -6,18 +6,19 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo.ts';
 import {Tween} from '@tweenjs/tween.js'
 
-
 import { ControlScheme, ControlSchemeType, InputCombination, MouseButton, UserSettings } from "@api/types/Settings";
-import { BuiltInSchemes } from "./util/util.ts"
 import { DocumentClosed, PartialUpdate, PluginTargetMessage, WebviewTargetMessage } from "@api/types/Messages";
+import { BuiltInSchemes } from "./util/util.ts"
+import ResourceManager from './util/ResourceManager.ts';
+import { ViewportGizmo } from './three-viewport-gizmo/ViewportGizmo.ts';
 
 import App from './components/App';
 import { choiceStrings } from './components/ContextMenu.tsx';
+
 import './output.css';
-import ResourceManager from './util/ResourceManager.ts';
+
 
 // The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
 declare global {
@@ -26,21 +27,14 @@ declare global {
   }
 }
 
-const loaders = {  
-  obj: new OBJLoader(),
-  fbx: new FBXLoader(),
-  gltf: new GLTFLoader(),
-  glb: new GLTFLoader(),
-};
-
-const raycaster = new THREE.Raycaster();
+// React Root
+let root : Root;
 
 let scene : THREE.Scene;
 
 let camera : THREE.PerspectiveCamera;
 let renderer : THREE.WebGLRenderer;
 
-let viewportGizmo : ViewportGizmo;
 
 let currentObject : THREE.Object3D;
 let controls : OrbitControls;
@@ -53,24 +47,34 @@ let userSettings: UserSettings;
 
 let tween : Tween;
 
-let root : Root;
+let viewportGizmo : ViewportGizmo;
 
 let currentlySelectedObject : THREE.Object3D | null;
 let outlineObject: THREE.Object3D | null;
 
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
+let pointerDown: boolean = false;
+
 
 let lightTarget: THREE.Object3D;
 let light: THREE.DirectionalLight;
 let lightHelper: THREE.DirectionalLightHelper;
-
-let pointerDown: boolean = false;
 let lightRotateStart: THREE.Vector2 | null = new THREE.Vector2();
+
 
 let flipY = true;
 
+const raycaster = new THREE.Raycaster();
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
+
+const loaders = {  
+  obj: new OBJLoader(),
+  fbx: new FBXLoader(),
+  gltf: new GLTFLoader(),
+  glb: new GLTFLoader(),
+};
+
 
 init();
 
@@ -80,12 +84,12 @@ function init() {
   const reactRoot = document.getElementById('reactRoot');
   root = createRoot(reactRoot as HTMLElement);
 
-  // Init Three.js scene and helper oobjects
+  // Init Three.js scene and helper objects
   scene = new THREE.Scene();
   scene.background = new THREE.Color("#4D4D4D");
 
   renderer = new THREE.WebGLRenderer({canvas: document.getElementById('htmlCanvas') as HTMLCanvasElement, antialias: true});
-  renderer.setAnimationLoop( render );
+  renderer.setAnimationLoop( render ); // Frame update function
 
   camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
   camera.position.set(cameraInitialPosition.x, cameraInitialPosition.y, cameraInitialPosition.z);
@@ -94,6 +98,7 @@ function init() {
   controls = new OrbitControls( camera, renderer.domElement );
   controls.addEventListener( 'change', onCameraMoved);
 
+  // UI Helper Gizmo for mouse-interaction camera rotation
   viewportGizmo = new ViewportGizmo(camera, renderer, {size: 75});
   viewportGizmo.target = controls.target;
 
@@ -105,12 +110,12 @@ function init() {
 
   light.target = lightTarget;
 
-  light.position.copy(new THREE.Vector3(1000, 1000, 1000));
+  // A big enough number that it should be bigger than most imports
+  light.position.copy(new THREE.Vector3(100000, 100000, 100000));
 
   lightHelper = new THREE.DirectionalLightHelper(light);
   lightHelper.visible = false;
   scene.add(lightHelper);
-
 
   resourceManager = new ResourceManager(scene);
 
@@ -120,13 +125,15 @@ function init() {
   window.addEventListener("pointerup", onPointerUp)
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
-  window.addEventListener( 'pointermove', onPointerMove );
+  window.addEventListener('pointermove', onPointerMove );
 
   onWindowResize();
 
+  // Let UXP plugin know we're ready to receive document texture data
   postPluginMessage({type: "Ready"});
 }
 
+// Called each frame.
 function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
   lightHelper.update();
 
@@ -138,7 +145,6 @@ function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
 function onCameraMoved() {
   if (contextMenuOpen) renderUI(false);
   viewportGizmo.update();
-  returnFocus();
 }
 
 function postPluginMessage(data: PluginTargetMessage) {
@@ -159,6 +165,11 @@ function onMessageReceived(event: MessageEvent<WebviewTargetMessage>) {
   }
 }
 
+/**
+ * Load the pixel data and either create a new texture (if the pixel data is for a new document or new resolution) 
+ * OR update the existing texture for the document. the pixelData is read as a string for which each character is the UTF16 charCode value (0-255) corresponding to the pixel value
+ * @param data object containing the updated pixel data + associated metadata
+ */
 function handleUpdate(data: PartialUpdate) {
   let width = data.width;
   let height = data.height;  
@@ -198,10 +209,9 @@ function handleUpdate(data: PartialUpdate) {
     pixelData = texture.image.data as Uint8Array;
 
     for (let i = 0; i < data.pixelString.length; i++) {
-      pixelData[pixelStringStartIndex + i] = data.pixelString.charCodeAt(i);
+      pixelData[pixelStringStartIndex + i] = data.pixelString.charCodeAt(i); 
     }
   }
-
 
   texture.needsUpdate = true;
 }
@@ -215,7 +225,7 @@ function handleDocumentClosed(data: DocumentClosed) {
 
 //#region Input Event Handlers
 
-
+// Set the Orbit controls mouse button actions based upon the currently held keys and the user settings control scheme.
 function updateOrbitControls() {
   let scheme: ControlScheme;
 
@@ -248,11 +258,11 @@ function updateOrbitControls() {
   if (scheme.zoom) assignToCameraControl(scheme.zoom, THREE.MOUSE.DOLLY);
 }
 
+// Track the currently pressed keys for camera + light movement controls.
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
 }
-
 
 function onKeyUp(event: KeyboardEvent) {
   pressedKeys[event.key] = false;
@@ -295,14 +305,23 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   return intersects[minIndex].object;
 }
 
+// Create highlight mesh + material 
 function selectObject(object: THREE.Object3D | null) {
   if (currentlySelectedObject == object) return;
 
+  // Delete the currently selected highlighter object + related resources.
   if (currentlySelectedObject != null) {
+    if (outlineObject instanceof THREE.Mesh) {
+      if (outlineObject.material instanceof THREE.Material) {
+        outlineObject.material.dispose();
+      }
+      outlineObject.geometry.dispose();
+    }
     scene.remove(outlineObject!);
   }
 
   currentlySelectedObject = object;
+  // Create a "highlight" by duplicating the mesh, scaling it up, and using an inverse hull material on  
   if (currentlySelectedObject != null) {
     if (object instanceof THREE.Mesh) {
       let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
@@ -333,6 +352,9 @@ function onPointerUp(event: PointerEvent) {
   lightHelper.visible = false;
 }
 
+/**
+ * click callback: Check if an object is being selected, the context menu is being opened with RMB, or the directional light movement should begin
+ */
 function onPointerDown(event: PointerEvent) {
   pointerDown = true;
   if (contextMenuOpen) {
@@ -346,13 +368,20 @@ function onPointerDown(event: PointerEvent) {
   } else if (event.button == 2 && controls.mouseButtons.RIGHT == null) {
     renderUI(true, new THREE.Vector2(event.clientX, event.clientY));
   }
-  if (pressedKeys["l"] && !controls.mouseButtons.LEFT && !controls.mouseButtons.RIGHT && !controls.mouseButtons.MIDDLE) {
+  let lightKey = BuiltInSchemes.get(userSettings.controlsSettings.scheme)?.light?.key ?? "";
+
+  if (pressedKeys[lightKey] && !controls.mouseButtons.LEFT && !controls.mouseButtons.RIGHT && !controls.mouseButtons.MIDDLE) {
     lightHelper.visible = true;
   }
 }
 
+/**
+ * Check if the keybind for moving the directional light is being held and then use the mouse movement to move it 
+ *  */
 function onPointerMove(event: PointerEvent) {
-  if (!pressedKeys["l"] || !pointerDown) return;
+  let lightKey = BuiltInSchemes.get(userSettings.controlsSettings.scheme)?.light?.key ?? "";
+
+  if (!pressedKeys[lightKey] || !pointerDown) return;
   if (controls.mouseButtons.LEFT || controls.mouseButtons.RIGHT || controls.mouseButtons.MIDDLE) return;
   lightHelper.visible = true;
 
@@ -438,8 +467,7 @@ function onUpdateSettings(newSettings: UserSettings, updatePlugin: boolean = tru
   camera.fov = userSettings.displaySettings.cameraFOV;
   camera.updateProjectionMatrix();
 
-
-  // TODO: Controls
+  // Controls
   updateOrbitControls();
 
   // Grid Settings
@@ -447,8 +475,6 @@ function onUpdateSettings(newSettings: UserSettings, updatePlugin: boolean = tru
 
   // Push settings value update to UI for menus
   renderUI(false);
-
-  returnFocus();
 
   if (updatePlugin) {
     postPluginMessage({type: "UpdateSettings", settings: userSettings});
@@ -463,7 +489,6 @@ async function onLoadButtonClicked(){
   let file = await selectFile(".obj,.fbx,.gltf,.glb");
   let url = URL.createObjectURL(file);
   loadObject(url, file.name);
-  returnFocus();
 }
 
 
@@ -481,6 +506,7 @@ function loadObject(objectFileURL: string, objectFileName: string) {
   var key = splitPath[splitPath.length - 1] as keyof typeof loaders;
   let loader= loaders[key];
 
+  // GLTF expects UVs to be in the opposite direction from the other formats, so we need to update textures to have their y-values flipped to acommodate
   let prevFlip = flipY;
   flipY = (key != "glb" && key != "gltf") 
 
@@ -496,9 +522,9 @@ function loadObject(objectFileURL: string, objectFileName: string) {
       currentObject = obj.scene;
     }
 
-
     resourceManager.addObjectToScene(currentObject);
 
+    // Center camera on object and zoom to fit in view
     const boundingBox = new THREE.Box3();
     boundingBox.setFromObject(currentObject);
     const center = new THREE.Vector3();
@@ -512,8 +538,10 @@ function loadObject(objectFileURL: string, objectFileName: string) {
     cameraZ *= 1.25;
     let newPos = new THREE.Vector3(cameraInitialPosition.x, cameraInitialPosition.y, cameraInitialPosition.z);
     newPos.normalize();
-    camera.position.copy(newPos.multiplyScalar(maxDim * 1.3));
 
+    camera.position.copy(newPos.multiplyScalar(maxDim * 1.3));
+    controls.target = center;
+    camera.lookAt(center);
 
     camera.updateProjectionMatrix();
     controls.update();
@@ -561,8 +589,4 @@ function updateGrid() {
     grid = new THREE.GridHelper( gs.size, gs.divisions, 0x0000ff, 0x808080 );
     scene.add(grid);
   }
-}
-
-function returnFocus() {
-  postPluginMessage({type: "ReturnFocus"});
 }

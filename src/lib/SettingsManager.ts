@@ -1,6 +1,7 @@
-import { isUserSettings } from "./Settings.guard";
-import { ControlSchemeType, UserSettings } from "@api/types/Settings";
 import { fs } from './globals';
+import { isUserSettings } from "./Settings.guard";
+
+import { ControlSchemeType, UserSettings } from "@api/types/Settings";
 
 const userSettingsFileName = "usersettings.json";
 const userSettingsDir = "plugin-data:/";
