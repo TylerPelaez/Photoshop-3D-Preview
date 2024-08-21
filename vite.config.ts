@@ -31,6 +31,9 @@ export default defineConfig({
     // minify: false,
     emptyOutDir: !shouldNotEmptyDir,
     rollupOptions: {
+      input: {
+        app: mode === 'dev' ? 'devindex.html' : './index.html'
+      },
       external: [
         "photoshop",         
         "bolt-uxp-hybrid.uxpaddon",         

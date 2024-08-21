@@ -1,7 +1,7 @@
 {
   "name": "3dtexture.preview.plugin",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": " cross-env MODE=dev vite build --watch",

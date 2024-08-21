@@ -1,6 +1,7 @@
 import { UXP_Manifest, UXP_Config } from "vite-uxp-plugin";
 import { version } from "./package.json";
 
+const mode = process.env.MODE;
 
 export type UXP_Manifest_Webview_Support = UXP_Manifest & {
   requiredPermissions?: {
@@ -19,7 +20,7 @@ const manifest: UXP_Manifest_Webview_Support = {
   id: "3dtexture.preview",
   name: "3D Preview",
   version,
-  main: "index.html",
+  main: mode === "dev" ? "devindex.html" : "index.html",
   manifestVersion: 6,
   host: [
     {
@@ -38,30 +39,31 @@ const manifest: UXP_Manifest_Webview_Support = {
       preferredDockedSize: { width: 400, height: 300 },
       preferredFloatingSize: { width: 480, height: 320 },
       maximumSize: { width: 4096, height: 4096 },
+      icons: [
+        {
+          width: 23,
+          height: 23,
+          path: "icons/icon.png",
+          scale: [1, 2],
+          theme: ["darkest", "dark", "medium", "lightest", "light", "all"],
+          species: ["pluginList"],
+        },
+      ],
     },
   ],
   requiredPermissions: {
     localFileSystem: "plugin",
-    launchProcess: {
-      schemes: ["https", "slack", "file", "ws"],
-      extensions: [".psd", ".bat", ".cmd"],
-    },
-    network: {
+    network: mode === 'dev' ? {
       domains: [
         `ws://localhost:${extraPrefs.hotReloadPort}`, // Required for hot reload
       ],
-    },
+    } : undefined,
     webview: {
       allow: "yes",
-      domains: ["http://127.0.0.1:5173", "https://tylerpelaez.github.io/Photoshop-3D-Preview/"],
+      domains: mode === 'dev' ? ["http://127.0.0.1:5173"] : ["https://tylerpelaez.github.io/Photoshop-3D-Preview/"],
       enableMessageBridge: "localAndRemote",
     },
-    ipc: {
-      enablePluginCommunication: true,
-    },
-    allowCodeGenerationFromStrings: true,
-
-    enableAddon: true,   
+    enableAddon: true,
   },
     addon: {
       name: "bolt-uxp-hybrid.uxpaddon",
@@ -70,7 +72,7 @@ const manifest: UXP_Manifest_Webview_Support = {
     {
       width: 23,
       height: 23,
-      path: "icons/icon.png",
+      path: "icons/plugin-icon.png",
       scale: [1, 2],
       theme: ["darkest", "dark", "medium", "lightest", "light", "all"],
       species: ["pluginList"],
