@@ -53,7 +53,7 @@ const manifest: UXP_Manifest_Webview_Support = {
     },
     webview: {
       allow: "yes",
-      domains: ["http://127.0.0.1:5173"],
+      domains: ["http://127.0.0.1:5173", "https://tylerpelaez.github.io/Photoshop-3D-Preview/"],
       enableMessageBridge: "localAndRemote",
     },
     ipc: {
