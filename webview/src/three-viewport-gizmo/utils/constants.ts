@@ -1,4 +1,4 @@
-import { GizmoOptions } from "@lib/types";
+import { GizmoOptions } from "../types";
 import { Color } from "three";
 
 export const GIZMO_AXES = ["x", "y", "z", "nx", "ny", "nz"] as const;

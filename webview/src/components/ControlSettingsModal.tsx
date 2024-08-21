@@ -80,7 +80,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
         </Tabs>
       </ModalBody>
       <ModalFooter>
-        <Button size="sm" radius="sm" color="primary" onPress={(e) => {
+        <Button size="sm" radius="sm" color="primary" onPress={(_event) => {
             onClose({...controlsSettings, scheme: selected});
           }
         }>

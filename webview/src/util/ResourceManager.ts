@@ -152,7 +152,7 @@ export default class ResourceManager {
 
 //#region Adding To Scene
   setTexturesFlipY(val: boolean) {
-    this.textures.forEach((tex, uuid) => {
+    this.textures.forEach((tex, _uuid) => {
       tex.flipY = val;
       tex.needsUpdate = true;
     })

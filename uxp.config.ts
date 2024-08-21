@@ -17,7 +17,7 @@ const extraPrefs = {
 
 const manifest: UXP_Manifest_Webview_Support = {
   id: "3dtexture.preview",
-  name: "3D Texture Preview",
+  name: "3D Preview",
   version,
   main: "index.html",
   manifestVersion: 6,
@@ -32,7 +32,7 @@ const manifest: UXP_Manifest_Webview_Support = {
       type: "panel",
       id: "mainPanel",
       label: {
-        default: "3D Texture Preview",
+        default: "3D Preview",
       },
       minimumSize: { width: 300, height: 150 },
       preferredDockedSize: { width: 400, height: 300 },

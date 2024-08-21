@@ -1,4 +1,4 @@
-import { GizmoOptions } from "@lib/types";
+import { GizmoOptions } from "../types";
 import {
   CanvasTexture,
   RepeatWrapping,

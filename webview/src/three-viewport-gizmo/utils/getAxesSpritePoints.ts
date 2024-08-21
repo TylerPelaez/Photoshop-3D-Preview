@@ -1,6 +1,6 @@
 import { Sprite } from "three";
 import { getSpriteMaterial } from "./getSpriteMaterial";
-import { GizmoOptions } from "@lib/types";
+import { GizmoOptions } from "../types";
 import { COLOR_MANAGER, GIZMO_AXES } from "./constants";
 
 export function getAxesSpritePoints(options: GizmoOptions) {

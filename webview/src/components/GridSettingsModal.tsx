@@ -45,7 +45,7 @@ export default function GridSettingsModal({gridSettings, onClose}: {gridSettings
         </div>
       </ModalBody>
       <ModalFooter>
-        <Button size="sm" radius="sm" disabled={!isValidNumber(size) || !isValidNumber(divisions)} color="primary" onPress={(e) => {
+        <Button size="sm" radius="sm" disabled={!isValidNumber(size) || !isValidNumber(divisions)} color="primary" onPress={(_event) => {
             onClose({size: parseInt(size.trim(), 10), divisions: parseInt(divisions.trim(), 10), visible: visible});
           }
         }>

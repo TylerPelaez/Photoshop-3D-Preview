@@ -13,6 +13,7 @@ const resolvedAliases = Object.fromEntries(
 
 // vite.config.js
 export default defineConfig({
+  base: '/Photoshop-3D-Preview/',
   server: {
     watch: {
       usePolling: true

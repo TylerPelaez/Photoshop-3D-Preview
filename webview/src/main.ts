@@ -346,7 +346,7 @@ function selectObject(object: THREE.Object3D | null) {
   }
 }
 
-function onPointerUp(event: PointerEvent) {
+function onPointerUp(_event: PointerEvent) {
   pointerDown = false;
   lightRotateStart = null;
   lightHelper.visible = false;
