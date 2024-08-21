@@ -9,6 +9,7 @@ import { WebviewTargetMessage, PluginTargetMessage } from "@api/types/Messages";
 import { photoshop, uxp } from "./lib/globals";
 import Queue from './lib/queue';
 import SettingsManager from './lib/SettingsManager';
+import { notify } from "./api/photoshop";
 
 const BATCH_SIZE = 512 * 512;
 let addon: any;
@@ -28,6 +29,8 @@ let webviewReady = false;
 let documentDebouncers = new Map<number, DebouncedFunc<typeof getPixelsAndQueueForProcessing>>();
 
 let lastActiveDocumentId: number;
+
+let incorrectModeDocumentIdMessageShown = new Set<number>();
 
 
 let idle = true;
@@ -66,7 +69,7 @@ function init()
       "mainPanel": {
         create(rootNode) {
           return new Promise(function (resolve, reject) {
-            idle = false;
+            exitIdle();
             resolve(null);
           });
         },
@@ -84,8 +87,7 @@ function init()
   document.addEventListener('uxpcommand', (event) => {
     let commandId = (event as any).commandId;
     if (commandId === 'uxpshowpanel') {
-      idle = false;
-      pushAllUpdates();
+      exitIdle();
     } else if (commandId === 'uxphidepanel') {
       enterIdle();
     }
@@ -100,6 +102,7 @@ function init()
   PhotoshopAction.addNotificationListener(["select"], onSelect);
   PhotoshopAction.addNotificationListener(["close"], onClose);
   PhotoshopAction.addNotificationListener(["newDocument"], (_e, d) => updateDocument());
+  PhotoshopAction.addNotificationListener(["convertMode"], onColorModeChanged);
 
   // Setup message handler for messages sent from webview
   window.addEventListener("message", handleMessage);
@@ -128,6 +131,12 @@ function enterIdle() {
       addon.close_document(doc.id);
     })
   }, 30000);
+}
+
+function exitIdle() {
+  idle = false;
+  updateDocument();
+  pushAllUpdates();
 }
 
 function pushAllUpdates() {
@@ -204,6 +213,10 @@ async function getPixelsAndQueueForProcessing(documentID: number, forceFullUpdat
         console.log("queuing data for " + documentID);
         let document = app.documents.find((doc) => doc.id == documentID);
         if (!document) {
+          return Promise.resolve();
+        }
+
+        if (document.mode != "RGBColorMode") {
           return Promise.resolve();
         }
 
@@ -350,9 +363,27 @@ async function onClose(event: string | null, descriptor: ActionDescriptor | Clos
   }
 }
 
+function onColorModeChanged(event: string, descriptor: ActionDescriptor) {
+  if (descriptor.to._class ==="RGBColorMode") {
+    incorrectModeDocumentIdMessageShown.delete(app.activeDocument.id);
+  }
+  updateDocument();
+}
 
 function updateDocument() {
+  if (idle) return;
+
+  let id = app.activeDocument.id;
+
+  let document = app.documents.find((doc) => doc.id == id);
+  if (document && document.mode != "RGBColorMode" && !incorrectModeDocumentIdMessageShown.has(id)) {
+    notify("3D Preview: Non-RGB Color Modes are not supported at this time. Modify the color mode in Image > Mode > RGB Color.");
+    incorrectModeDocumentIdMessageShown.add(id);
+    return;
+  }
+
   lastActiveDocumentId = app.activeDocument.id;
+
   postToWebview({type: "DOCUMENT_CHANGED", documentID: app.activeDocument.id});
 }
 

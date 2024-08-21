@@ -17,7 +17,7 @@ const extraPrefs = {
 };
 
 const manifest: UXP_Manifest_Webview_Support = {
-  id: "3dtexture.preview",
+  id: "b5e53943",
   name: "3D Preview",
   version,
   main: mode === "dev" ? "devindex.html" : "index.html",

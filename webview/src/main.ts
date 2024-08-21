@@ -18,6 +18,7 @@ import App from './components/App';
 import { choiceStrings } from './components/ContextMenu.tsx';
 
 import './output.css';
+import { SelectionBox, SelectionHelper } from 'three/examples/jsm/Addons.js';
 
 
 // The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
@@ -49,8 +50,8 @@ let tween : Tween;
 
 let viewportGizmo : ViewportGizmo;
 
-let currentlySelectedObject : THREE.Object3D | null;
-let outlineObject: THREE.Object3D | null;
+let currentlySelectedObjects : THREE.Object3D[] = [];
+let outlineObjects: THREE.Object3D[] = [];
 
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
@@ -62,6 +63,10 @@ let light: THREE.DirectionalLight;
 let lightHelper: THREE.DirectionalLightHelper;
 let lightRotateStart: THREE.Vector2 | null = new THREE.Vector2();
 
+let selectionBox: SelectionBox;
+let selectionHelper: SelectionHelper;
+let selectionHappening: boolean = false;
+let boxSelectionHappening: boolean = false;
 
 let flipY = true;
 
@@ -116,6 +121,10 @@ function init() {
   lightHelper = new THREE.DirectionalLightHelper(light);
   lightHelper.visible = false;
   scene.add(lightHelper);
+
+  selectionBox = new SelectionBox(camera, scene);
+  selectionHelper = new SelectionHelper(renderer, 'selectBox');
+  selectionHelper.enabled = false;
 
   resourceManager = new ResourceManager(scene);
 
@@ -262,6 +271,7 @@ function updateOrbitControls() {
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
+  if (event.key == "Alt") console.log(controls.mouseButtons);
 }
 
 function onKeyUp(event: KeyboardEvent) {
@@ -292,7 +302,7 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   for ( let i = 0; i < intersects.length; i ++ ) {
     let obj = intersects[i].object;
     if (obj instanceof THREE.Line) continue;
-    if (obj == outlineObject) continue;
+    if (outlineObjects.find((val) => val === obj)) continue;
     if (intersects[i].distance < minDistance) {
       minDistance = intersects[i].distance;
       minIndex = i;
@@ -305,27 +315,32 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   return intersects[minIndex].object;
 }
 
-// Create highlight mesh + material 
-function selectObject(object: THREE.Object3D | null) {
-  if (currentlySelectedObject == object) return;
+// Create highlight mesh + material for the objects
+function selectObjects(objects: THREE.Object3D[]) {
+  // Delete the currently selected highlighter objects + related resources.
+  let currentOutlineObjectUUIDs = new Set();
 
-  // Delete the currently selected highlighter object + related resources.
-  if (currentlySelectedObject != null) {
-    if (outlineObject instanceof THREE.Mesh) {
-      if (outlineObject.material instanceof THREE.Material) {
-        outlineObject.material.dispose();
+  for (let i = 0; i < outlineObjects.length; i++) {
+    outlineObjects[i].traverse((obj) => {
+      currentOutlineObjectUUIDs.add(obj.uuid);
+      if (obj instanceof THREE.Mesh) {
+        (obj.material as THREE.Material).dispose();
+        obj.geometry.dispose();
       }
-      outlineObject.geometry.dispose();
-    }
-    scene.remove(outlineObject!);
+    });
+    scene.remove(outlineObjects[i]);
   }
 
-  currentlySelectedObject = object;
-  // Create a "highlight" by duplicating the mesh, scaling it up, and using an inverse hull material on  
-  if (currentlySelectedObject != null) {
+  currentlySelectedObjects = [];
+  for (let object of objects) {
+    if (currentOutlineObjectUUIDs.has(object.uuid)) {
+      continue;
+    }
+
+    currentlySelectedObjects.push(object);
     if (object instanceof THREE.Mesh) {
       let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#338EF7"), side: THREE.BackSide } );
-      outlineObject = new THREE.Object3D();
+      let outlineObject = new THREE.Object3D();
 
       let center = new THREE.Vector3();
 
@@ -342,11 +357,29 @@ function selectObject(object: THREE.Object3D | null) {
       geometry.position.set(-center.x, -center.y, -center.z);
       outlineObject.scale.multiply(object.scale).multiplyScalar(1.05);
       scene.add(outlineObject);
+
+      outlineObjects.push(outlineObject);
     }
   }
 }
 
-function onPointerUp(_event: PointerEvent) {
+function onPointerUp(event: PointerEvent) {
+  if (boxSelectionHappening) {
+    selectionBox.endPoint.set(
+      ( event.clientX / window.innerWidth ) * 2 - 1,
+      - ( event.clientY / window.innerHeight ) * 2 + 1,
+      0.5 );
+    let selection = selectionBox.select();
+    selectObjects(selection);
+  } else if (selectionHappening) {
+    let obj = getObjectAtCursor(event);
+    selectObjects(obj ? [obj] : []);
+  }
+
+
+  selectionHelper.enabled = false;
+  selectionHappening = false;
+  boxSelectionHappening = false;
   pointerDown = false;
   lightRotateStart = null;
   lightHelper.visible = false;
@@ -361,17 +394,22 @@ function onPointerDown(event: PointerEvent) {
     renderUI(false);
   }
 
-  let obj = getObjectAtCursor(event);
-  
-  if (event.button == 0 && controls.mouseButtons.LEFT == null) {
-    selectObject(obj);
+  let lightKey = BuiltInSchemes.get(userSettings.controlsSettings.scheme)?.light?.key ?? "";
+  if (event.button == 0 && pressedKeys[lightKey] && !controls.mouseButtons.LEFT && !controls.mouseButtons.RIGHT && !controls.mouseButtons.MIDDLE) {
+    lightHelper.visible = true;
+  } else if (event.button == 0 && controls.mouseButtons.LEFT === null) {
+    // Begin selection
+    selectionHelper.enabled = true;
+    (selectionHelper as any).onPointerDown(event); // In case the events dont get called in the right order
+
+    selectionBox.startPoint.set(
+      ( event.clientX / window.innerWidth ) * 2 - 1,
+      - ( event.clientY / window.innerHeight ) * 2 + 1,
+      0.5 );
+
+    selectionHappening = true;
   } else if (event.button == 2 && controls.mouseButtons.RIGHT == null) {
     renderUI(true, new THREE.Vector2(event.clientX, event.clientY));
-  }
-  let lightKey = BuiltInSchemes.get(userSettings.controlsSettings.scheme)?.light?.key ?? "";
-
-  if (pressedKeys[lightKey] && !controls.mouseButtons.LEFT && !controls.mouseButtons.RIGHT && !controls.mouseButtons.MIDDLE) {
-    lightHelper.visible = true;
   }
 }
 
@@ -379,6 +417,11 @@ function onPointerDown(event: PointerEvent) {
  * Check if the keybind for moving the directional light is being held and then use the mouse movement to move it 
  *  */
 function onPointerMove(event: PointerEvent) {
+  if (selectionHappening) {
+    boxSelectionHappening = true;
+    return;
+  }
+
   let lightKey = BuiltInSchemes.get(userSettings.controlsSettings.scheme)?.light?.key ?? "";
 
   if (!pressedKeys[lightKey] || !pointerDown) return;
@@ -423,7 +466,7 @@ function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector
     onUpdateSettings: onUpdateSettings, 
     onModelLoad: onLoadButtonClicked,
     contextMenuOpen: contextMenuVisible,
-    hasObjectSelected: currentlySelectedObject != null,
+    hasObjectSelected: currentlySelectedObjects.length > 0,
     contextMenuPosition: contextMenuPosition,
     onContextMenuChoiceMade: onContextMenuChoiceMade,
     lightingEnabled: resourceManager.lightingEnabled(),
@@ -434,27 +477,35 @@ function renderUI(contextMenuVisible: boolean, contextMenuPosition: THREE.Vector
 }
 
 function onContextMenuChoiceMade(key: choiceStrings) {
-  if (!currentlySelectedObject) {
+  if (currentlySelectedObjects.length == 0) {
     console.warn("No Object selected for context menu");
     return;
   }
   if (key == "FOCUS") {
+    let avgPosition = new THREE.Vector3();
+    currentlySelectedObjects.forEach(obj => {
+      avgPosition.add(obj.position);
+    });
+    avgPosition.divideScalar(currentlySelectedObjects.length);
+
     tween = new Tween(controls.target)
-    .to(currentlySelectedObject.position, 75)
+    .to(avgPosition, 75)
     .onUpdate((val) => {
       controls.target = val;
       camera.lookAt(val);
     })
     .start();
   } else if (key == "APPLY") {
-    if (currentlySelectedObject instanceof THREE.Mesh) {
-      let texture = resourceManager.getTextureForDocumentId(activeDocument);
-      if (texture) {
-        let newMaterial = resourceManager.createMaterialProxy(new THREE.MeshStandardMaterial({map: texture}));
-        resourceManager.addMaterialTexture(texture, newMaterial.uuid);
-        resourceManager.setMeshMaterial(currentlySelectedObject, newMaterial);
+    currentlySelectedObjects.forEach(obj => {
+      if (obj instanceof THREE.Mesh) {
+        let texture = resourceManager.getTextureForDocumentId(activeDocument);
+        if (texture) {
+          let newMaterial = resourceManager.createMaterialProxy(new THREE.MeshStandardMaterial({map: texture}));
+          resourceManager.addMaterialTexture(texture, newMaterial.uuid);
+          resourceManager.setMeshMaterial(obj, newMaterial);
+        }
       }
-    }
+    });
   }
 
   renderUI(false, new THREE.Vector2(0, 0)); // Close the context menu
@@ -497,7 +548,8 @@ function loadObject(objectFileURL: string, objectFileName: string) {
   if (currentObject) {
     resourceManager.removeObjectFromScene(currentObject.uuid);
   }
-  selectObject(null);
+  // Clear anything selected
+  selectObjects([]);
 
   postPluginMessage({type: "RequestUpdate"});
 
