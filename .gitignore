@@ -6,3 +6,4 @@ public-hybrid/
 public-zip/
 src/hybrid/win/bolt-uxp-hybrid/
 .vscode/
+webview/src/output.css
