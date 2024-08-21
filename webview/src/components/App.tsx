@@ -85,7 +85,7 @@ function App(props: AppProps) {
   return (
     <NextUIProvider disableAnimation>
       <main className="dark text-foreground">
-        <Dropdown size="sm" radius="sm">
+        <Dropdown containerPadding={6} size="sm" radius="sm">
           <DropdownTrigger>
             <Button size="sm" radius="sm" color="default" title="Menu">
               <HamburgerIcon />
