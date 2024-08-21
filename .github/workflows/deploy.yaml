@@ -41,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Tailwind
-        run: npm tailwind
+        run: npm run tailwind
       - name: Build
         run: npm run build
       - name: Setup Pages
