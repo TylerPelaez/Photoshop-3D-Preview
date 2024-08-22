@@ -1,3 +1,6 @@
+xcuserdata
+xcuserdata/*
+*.xcuserstate
 .vs/
 node_modules/
 dist/
