@@ -18,7 +18,7 @@ import App from './components/App';
 import { choiceStrings } from './components/ContextMenu.tsx';
 
 import './output.css';
-import { SelectionBox, SelectionHelper } from 'three/examples/jsm/Addons.js';
+import { EffectComposer, OutlinePass, OutputPass, RenderPass, SelectionBox, SelectionHelper } from 'three/examples/jsm/Addons.js';
 
 
 // The Plugin host will set this on the window automatically, just clarify for typescript that the field is expected.
@@ -51,7 +51,6 @@ let tween : Tween;
 let viewportGizmo : ViewportGizmo;
 
 let currentlySelectedObjects : THREE.Object3D[] = [];
-let outlineObjects: THREE.Object3D[] = [];
 
 let contextMenuOpen : boolean = false;
 let pressedKeys: {[_keyName: string]: boolean} = {};
@@ -73,6 +72,9 @@ let flipY = true;
 const raycaster = new THREE.Raycaster();
 const cameraInitialPosition = new THREE.Vector3( 3, 3.5, 2 );
 
+let composer: EffectComposer;
+let outlinePass: OutlinePass;
+
 const loaders = {  
   obj: new OBJLoader(),
   fbx: new FBXLoader(),
@@ -93,12 +95,13 @@ function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color("#4D4D4D");
 
-  renderer = new THREE.WebGLRenderer({canvas: document.getElementById('htmlCanvas') as HTMLCanvasElement, antialias: true});
+  renderer = new THREE.WebGLRenderer({canvas: document.getElementById('htmlCanvas') as HTMLCanvasElement});
   renderer.setAnimationLoop( render ); // Frame update function
 
-  camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+  camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 10000 );
   camera.position.set(cameraInitialPosition.x, cameraInitialPosition.y, cameraInitialPosition.z);
   scene.add(camera);
+
 
   controls = new OrbitControls( camera, renderer.domElement );
   controls.addEventListener( 'change', onCameraMoved);
@@ -121,6 +124,18 @@ function init() {
   lightHelper = new THREE.DirectionalLightHelper(light);
   lightHelper.visible = false;
   scene.add(lightHelper);
+
+  composer = new EffectComposer(renderer);
+  if (renderer.getContext() instanceof WebGL2RenderingContext ) {
+    composer.renderTarget1.samples = 4;
+    composer.renderTarget2.samples = 4;
+  }
+
+  composer.addPass(new RenderPass(scene, camera));
+  outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+  outlinePass.visibleEdgeColor = new THREE.Color("#3aafdc");
+  composer.addPass(outlinePass);
+  composer.addPass(new OutputPass());
 
   selectionBox = new SelectionBox(camera, scene);
   selectionHelper = new SelectionHelper(renderer, 'selectBox');
@@ -147,7 +162,7 @@ function render(time: DOMHighResTimeStamp, _frame: XRFrame)  {
   lightHelper.update();
 
   if (tween && tween.isPlaying()) tween.update(time);
-  renderer.render( scene, camera );
+  composer.render();
   viewportGizmo.render();
 }
 
@@ -271,7 +286,6 @@ function updateOrbitControls() {
 function onKeyDown(event: KeyboardEvent) {
   pressedKeys[event.key] = true;
   updateOrbitControls();
-  if (event.key == "Alt") console.log(controls.mouseButtons);
 }
 
 function onKeyUp(event: KeyboardEvent) {
@@ -283,6 +297,9 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize( window.innerWidth, window.innerHeight );
+  composer.setSize(window.innerWidth, window.innerHeight);
+  outlinePass.resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+
   viewportGizmo.update();
 }
 
@@ -302,7 +319,6 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   for ( let i = 0; i < intersects.length; i ++ ) {
     let obj = intersects[i].object;
     if (obj instanceof THREE.Line) continue;
-    if (outlineObjects.find((val) => val === obj)) continue;
     if (intersects[i].distance < minDistance) {
       minDistance = intersects[i].distance;
       minIndex = i;
@@ -315,52 +331,10 @@ function getObjectAtCursor(event: MouseEvent): THREE.Object3D | null {
   return intersects[minIndex].object;
 }
 
-// Create highlight mesh + material for the objects
+
 function selectObjects(objects: THREE.Object3D[]) {
-  // Delete the currently selected highlighter objects + related resources.
-  let currentOutlineObjectUUIDs = new Set();
-
-  for (let i = 0; i < outlineObjects.length; i++) {
-    outlineObjects[i].traverse((obj) => {
-      currentOutlineObjectUUIDs.add(obj.uuid);
-      if (obj instanceof THREE.Mesh) {
-        (obj.material as THREE.Material).dispose();
-        obj.geometry.dispose();
-      }
-    });
-    scene.remove(outlineObjects[i]);
-  }
-
-  currentlySelectedObjects = [];
-  for (let object of objects) {
-    if (currentOutlineObjectUUIDs.has(object.uuid)) {
-      continue;
-    }
-
-    currentlySelectedObjects.push(object);
-    if (object instanceof THREE.Mesh) {
-      let material = new THREE.MeshBasicMaterial( {color: new THREE.Color("#3aafdc"), side: THREE.BackSide } );
-      let outlineObject = new THREE.Object3D();
-
-      let center = new THREE.Vector3();
-
-      object.geometry.computeBoundingBox();
-      object.geometry.boundingBox.getCenter(center);
-
-      let offset = new THREE.Vector3();
-      offset.addVectors(center, object.position);
-
-      outlineObject.position.set(offset.x, offset.y, offset.z);
-      let geometry = new THREE.Mesh(object.geometry, material);
-      outlineObject.attach(geometry);
-
-      geometry.position.set(-center.x, -center.y, -center.z);
-      outlineObject.scale.multiply(object.scale).multiplyScalar(1.05);
-      scene.add(outlineObject);
-
-      outlineObjects.push(outlineObject);
-    }
-  }
+  currentlySelectedObjects = objects;
+  outlinePass.selectedObjects = currentlySelectedObjects;
 }
 
 function onPointerUp(event: PointerEvent) {
