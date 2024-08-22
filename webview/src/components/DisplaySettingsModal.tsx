@@ -11,8 +11,8 @@ export default function DisplaySettingsModal({displaySettings, onClose}: {displa
 
   return (
     <>
-      <ModalHeader className="flex flex-col gap-1">Display Settings</ModalHeader>
-      <ModalBody>
+      <ModalHeader className="text-small">Display Settings</ModalHeader>
+      <ModalBody style={{alignItems: "center"}}>
         <Slider
           label="Camera Field of View"
           color="foreground"
@@ -21,7 +21,7 @@ export default function DisplaySettingsModal({displaySettings, onClose}: {displa
           maxValue={120}
           defaultValue={displaySettings.cameraFOV}
           onChangeEnd={setFOV as (arg: number | number[]) => void}
-          className="max-w-md"
+          className="max-w-sm"
         />
         <Slider
           label="Texture Resolution Scaling"
@@ -32,7 +32,7 @@ export default function DisplaySettingsModal({displaySettings, onClose}: {displa
           maxValue={100}
           defaultValue={pctScale}
           onChange={setTextureResolutionScale as (arg: number | number[]) => void}
-          className="max-w-md"
+          className="max-w-sm"
           marks={[
             {
               value: 25,

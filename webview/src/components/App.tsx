@@ -106,7 +106,7 @@ function App(props: AppProps) {
         </Button>    
 
         {modals.map((modal) => ( // Cuts down on some boilerplate
-          <Modal key={modal.key} isOpen={modal.disclosure.isOpen} onOpenChange={modal.disclosure.onOpenChange} placement="top-center">
+          <Modal className="max-h-[90%]" style={{height: "90%"}} scrollBehavior="inside" radius="sm" key={modal.key} isOpen={modal.disclosure.isOpen} onOpenChange={modal.disclosure.onOpenChange} placement="center">
             <ModalContent>
               {modal.component} 
             </ModalContent>  

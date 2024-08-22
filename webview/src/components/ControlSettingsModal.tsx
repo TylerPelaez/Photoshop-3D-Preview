@@ -55,7 +55,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
 
     tabs.push(
       <Tab className="flex justify-center w-full" key={schemeType} title={capitalize(ControlSchemeType[schemeType])}>
-        <Listbox shouldHighlightOnFocus={false}  className="w-full max-w-[260px] border-small px-1 py-2 rounded-small border-default-200 dark:border-default-100">
+        <Listbox shouldHighlightOnFocus={false} className="w-full max-w-[180px] border-small px-1 py-2 rounded-small border-default-200 dark:border-default-100">
           {["Pan", "Rotate", "Zoom", "Move Light"].map(action => getTabContent(scheme, action))}
         </Listbox>
       </Tab>
@@ -65,7 +65,7 @@ export default function ControlSettingsModal({controlsSettings, onClose}: {contr
 
   return (
     <>
-      <ModalHeader className="flex flex-col gap-1">Control Schemes</ModalHeader>
+      <ModalHeader className="text-small ">Control Schemes</ModalHeader>
       <ModalBody>
         <Tabs
               fullWidth

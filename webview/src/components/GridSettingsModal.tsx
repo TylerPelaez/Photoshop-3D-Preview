@@ -12,7 +12,7 @@ export default function GridSettingsModal({gridSettings, onClose}: {gridSettings
 
   return (
     <>
-      <ModalHeader className="flex flex-col gap-1">Grid Settings</ModalHeader>
+      <ModalHeader className="text-small">Grid Settings</ModalHeader>
       <ModalBody>
         <Input
           onValueChange={setSize}
@@ -21,6 +21,7 @@ export default function GridSettingsModal({gridSettings, onClose}: {gridSettings
           errorMessage="Enter a number greater than 0"
           label="Grid Size"
           variant="bordered"
+          size="sm"
           value={size}
         />
         <Input
@@ -30,10 +31,12 @@ export default function GridSettingsModal({gridSettings, onClose}: {gridSettings
           label="Grid Divisions"
           errorMessage="Enter a number greater than 0"
           variant="bordered"
+          size="sm"
           value={divisions}
         />
         <div className="flex py-2 px-1 justify-between">
           <Checkbox
+            size="sm"
             onValueChange={setVisible}
             classNames={{
               label: "text-small",
