@@ -406,9 +406,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				CODE_SIGN_IDENTITY = "Developer ID Application: Hyper Brew LLC (NRJ8DFFJK7)";
+				CODE_SIGN_IDENTITY = "Apple Development: tyler.pelaez.11@gmail.com (5F7DJG35AC)";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = NRJ8DFFJK7;
+				DEVELOPMENT_TEAM = PP93Z7MA4D;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				EXECUTABLE_EXTENSION = uxpaddon;
@@ -423,9 +423,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				CODE_SIGN_IDENTITY = "Developer ID Application: Hyper Brew LLC (NRJ8DFFJK7)";
+				CODE_SIGN_IDENTITY = "Apple Development: tyler.pelaez.11@gmail.com (5F7DJG35AC)";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = NRJ8DFFJK7;
+				DEVELOPMENT_TEAM = PP93Z7MA4D;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				EXECUTABLE_EXTENSION = uxpaddon;
@@ -440,9 +440,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = x86_64;
-				CODE_SIGN_IDENTITY = "Developer ID Application: Hyper Brew LLC (NRJ8DFFJK7)";
+				CODE_SIGN_IDENTITY = "Apple Development: tyler.pelaez.11@gmail.com (5F7DJG35AC)";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = NRJ8DFFJK7;
+				DEVELOPMENT_TEAM = PP93Z7MA4D;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				EXECUTABLE_EXTENSION = uxpaddon;
@@ -458,9 +458,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = x86_64;
-				CODE_SIGN_IDENTITY = "Developer ID Application: Hyper Brew LLC (NRJ8DFFJK7)";
+				CODE_SIGN_IDENTITY = "Apple Development: tyler.pelaez.11@gmail.com (5F7DJG35AC)";
 				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = NRJ8DFFJK7;
+				DEVELOPMENT_TEAM = PP93Z7MA4D;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				EXECUTABLE_EXTENSION = uxpaddon;
