@@ -2,7 +2,6 @@
 node_modules/
 dist/
 build/
-public-hybrid/
 public-zip/
 src/hybrid/win/bolt-uxp-hybrid/
 .vscode/
